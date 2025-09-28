@@ -27,7 +27,11 @@ for patient in all_patients:
     output_vector.append(patient[3])
 
     #add patient's anchor_year_group
-    output_vector.append(*[int(year) for year in patient[4].split('-')])
+    year_group = [int(year) for year in patient[4].split('-')]
+    output_vector.append(year_group[0])
+    output_vector.append(year_group[1])
+
+    print(output_vector)
 
 
     # Add admission table to vector
