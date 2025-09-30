@@ -7,6 +7,12 @@ conn = sqlite3.connect(db_path)
 cur = conn.cursor()
 
 
+# ---------------------------------------------------------------------------
+# TABLE FEATURE EXTRACTION FUNCTIONS
+# ---------------------------------------------------------------------------
+
+def parse_patient_row(row):
+
 #Get a list of all patient names
 cur.execute("SELECT * FROM patients;")
 all_patients = cur.fetchall()
