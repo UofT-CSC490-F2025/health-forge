@@ -1,53 +1,96 @@
 import sqlite3
 import numpy as np
 from pathlib import Path
+import re
 
 db_path = Path(__file__).parent / "MIMIC_IV_demo.sqlite"
 conn = sqlite3.connect(db_path)
 cur = conn.cursor()
 
+def merge_database(db_input_path: Path, output_table_name: str) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row   # enables name-based access
+    cur = conn.cursor()
 
-#Get a list of all patient names
-cur.execute("SELECT * FROM patients;")
-all_patients = cur.fetchall()
-print(all_patients)
 
-#For each patient
+    result_mapping, vector_length = get_omr_result_names(conn)
+    for patient in cur.execute("SELECT * FROM patients;"):
+        subject_id = patient["subject_id"]
+        gender = 0 if patient["gender"] == 'M' else 1
+        age = patient["anchor_age"]
 
-for patient in all_patients:
-    output_vector = [] #Will start with a normal dynamic array for now, we can use a NP array once we know the actual shape
+
+        get_omr(conn, subject_id, result_mapping, vector_length)
+
+    cur.close()
+    conn.close()
+
+
+def get_omr_result_names(db_conn: sqlite3.Connection) -> dict:
+    cur = conn.cursor()
+
+    cur.execute("SELECT DISTINCT result_name FROM omr ORDER BY result_name;")
+
+    all_result_names = cur.fetchall()
+    all_result_names = [result[0] for result in all_result_names]
+    print(all_result_names)
+    result_names_index_mapping = {}
+
+    cur_index = 0
+    for result in all_result_names:
+        
+        if 'Blood Pressure' in result:
+            result_names_index_mapping[result] = (cur_index, cur_index + 1)
+            cur_index += 2
+        else:
+            result_names_index_mapping[result] = (cur_index,)
+            cur_index += 1
+
+    return result_names_index_mapping, cur_index + 1
+
+def get_omr(db_conn: sqlite3.Connection, subject_id: int, result_mapping: dict, vector_length: int) -> np.ndarray:
+    cur = conn.cursor()
+
+    # Get the latest measurement in each measurement category
+    query = f"""SELECT * 
+        FROM (
+            SELECT omr_t.*, 
+                ROW_NUMBER() OVER (PARTITION BY result_name ORDER BY chartdate DESC, seq_num DESC) AS rn
+            FROM omr omr_t
+            WHERE subject_id = ?
+        ) AS x
+        WHERE rn = 1;
+        """
+    cur_omr = cur.execute(query, (subject_id,))
+
+    omr_vector = np.zeros(vector_length)
+    for result in cur_omr:
+
+        if 'Blood Pressure' in result[3]:
+            split = result[4].split('/')
+            systolic = float(split[0])
+            diastolic = float(split[1])
+            systolic_index = result_mapping[result[3]][0]
+            diastolic_index = result_mapping[result[3]][1]
+
+            omr_vector[systolic_index] = systolic
+            omr_vector[diastolic_index] = diastolic
+        else:
+            result_value = result[4]
+            result_index = systolic_index = result_mapping[result[3]][0]
+
+            result_value =  float(re.sub(r'[^0-9.]', '', result_value))
+            omr_vector[result_index] = result_value
+
+
+        
+
+    print(omr_vector)
+    return omr_vector
+
+if __name__ == "__main__":
+    merge_database(db_path, "")
     
-    #add patient's id
-    output_vector.append(patient[0])
-    #add patient's gender
-    output_vector.append(0 if patient[1] == 'M' else 1)
-    #add patient's anchor_age
-    output_vector.append(patient[2])
-    #add patient's anchor_year
-    output_vector.append(patient[3])
-
-    #add patient's anchor_year_group
-    year_group = [int(year) for year in patient[4].split('-')]
-    output_vector.append(year_group[0])
-    output_vector.append(year_group[1])
-
-    print(output_vector)
-
-
-    # Add admission table to vector
-    # Add diagnoses_icd to vector (holds patients and diagnosis)
-    # Add drgcodes to vector  (holds reason for patient stay on each visit)
-    # Add emar table to vector  (holds drugs administrated to each patient)
-    # Add emar_details (holds additional details about each drug admin)
-    # Add hspc_events (holds codes for every procdure and event done)
-    # Add lab_events (holds results of lab measurements for a patient)
-    # Add microbiologyevents
-    # Add pharmacy (detailed information about drugs administered)
-    # Add poe (table of drug orders)
-    # Add prescriptions (Holds infro about prescribed drugs to patients)
-    # Add procedures_icd (Holds procedure history of each patient)
-    # Add services (holds which service (type of admission kinda) that each patient had)
-    # Add transfers (holds details about patient unit transfer  )
 
 
 
