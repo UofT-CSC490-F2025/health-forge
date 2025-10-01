@@ -2,11 +2,36 @@ import sqlite3
 import numpy as np
 from pathlib import Path
 
-db_path = Path(__file__).parent / "MIMIC_IV_demo.sqlite"
+db_path = Path(__file__).parent.parent / "MIMIC_IV_demo.sqlite"
 
 # ---------------------------------------------------------------------------
 # TABLE FEATURE EXTRACTION FUNCTIONS
 # ---------------------------------------------------------------------------
+def merge_database(db_input_path: Path, output_table_name: str) -> None:
+    conn = sqlite3.connect(db_input_path)
+    conn.row_factory = sqlite3.Row   # enables name-based access
+    cur = conn.cursor()
+
+    enums = get_enums(conn)
+
+    for patient in cur.execute("SELECT * FROM patients;"):
+        subject_id = patient["subject_id"]
+        gender = 0 if patient["gender"] == 'M' else 1
+        age = patient["anchor_age"]
+        # anchor_year = patient["anchor_year"]
+        # anchor_year_group = patient["anchor_year_group"]
+        dod = 1 if patient["dod"] else 0
+
+        gsn_vector = get_prescriptions(conn, subject_id, enums["prescriptions"])
+        icd_codes_vector = get_diagnoses_icd(conn, subject_id, enums['diagnoses_icd'])
+        rx_vec = get_prescriptions(conn, subject_id, enums["prescriptions"])
+        proc_vec = get_procedures_icd(conn, subject_id, enums["procedures_icd"]["icd_codes"])
+        poe_vec = get_poe(conn, subject_id, enums["poe"])
+        svc_vec = get_services(conn, subject_id, enums["services"])
+
+
+    cur.close()
+    conn.close()
 
 def get_enums(db_conn: sqlite3.Connection) -> dict:
     cur = db_conn.cursor()
@@ -15,7 +40,7 @@ def get_enums(db_conn: sqlite3.Connection) -> dict:
         "diagnoses_icd": {},
         "poe": {},
         "procedures_icd": {},
-        "services": {}
+        "services": {},
     }
 
     # --- Prescriptions: GSN ---
@@ -46,6 +71,14 @@ def get_enums(db_conn: sqlite3.Connection) -> dict:
     cur.execute("SELECT DISTINCT curr_service FROM services;")
     services = [row[0] for row in cur.fetchall() if row[0] is not None]
     enums["services"]["curr_service"] = {v: i for i, v in enumerate(services)}
+
+    # --- diagnoses_icd ---
+    cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd;")
+    icd_codes = cur.fetchall()
+    icd_codes = [i[0] for i in icd_codes] # List[tuple[str]] -> List[str]
+    icd_codes_enum = {icd_codes[i]: i for i in range(len(icd_codes))}
+    enums["diagnoses_icd"]["icd_codes"] = icd_codes_enum
+
 
     cur.close()
     return enums
@@ -98,6 +131,7 @@ def get_prescriptions(db_conn: sqlite3.Connection, subject_id: int, prescription
     return gsn_vector
 
 
+
 # the only data point of value in procedures_icd is the icd_code which represents the procedure the patient underwent.
 # various cleaning was first done to the icd_code to normalize it. the decimal point was removed as it does not hold meaning
 # (eg. 0.123 and 0123 are the same code). Additionally, the icd_version was prepended to the code to differentiate between
@@ -138,51 +172,22 @@ def get_services(db_conn: sqlite3.Connection, subject_id: int, services_enum: di
 
 # transfers table is omitted as it holds meaning in the form of a timeline of patient transfers, even within a single
 # hospital admission. since our frequency encodings do not capture temporal data, this table is not useful for our purposes.
+def get_diagnoses_icd(db_conn: sqlite3.Connection, subject_id: int, diagnoses_icd_enum: dict) -> np.ndarray:
+    cur = db_conn.cursor()
+    columns = ["icd_code"]
+    columns_str = ','.join(columns)
+    query = f"SELECT {columns_str} FROM diagnoses_icd WHERE subject_id={subject_id};"
 
+    icd_codes_enum = diagnoses_icd_enum['icd_codes']
+    icd_codes_vector = np.zeros(len(icd_codes_enum), dtype=np.int32)
 
+    for diagnosis in cur.execute(query):
+        code = diagnosis["icd_code"]
 
-
-# testing code, testing shape and frequency encoding
-if __name__ == "__main__":
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
-    # Grab a sample of patient IDs
-    cur.execute("SELECT subject_id FROM patients LIMIT 5;")
-    sample_ids = [row["subject_id"] for row in cur.fetchall()]
-
-    # Build enums
-    enums = get_enums(conn)
-
-    for subject_id in sample_ids:
-        print(f"\n--- Testing subject_id={subject_id} ---")
-
-        # Prescriptions
-        rx_vec = get_prescriptions(conn, subject_id, enums["prescriptions"])
-        rx_density = np.count_nonzero(rx_vec) / len(rx_vec)
-        print("Prescriptions vector:", rx_vec.shape, "Nonzeros:", np.count_nonzero(rx_vec), f"Density: {rx_density:.2%}")
-
-        # Procedures
-        proc_vec = get_procedures_icd(conn, subject_id, enums["procedures_icd"]["icd_codes"])
-        proc_density = np.count_nonzero(proc_vec) / len(proc_vec)
-        print("Procedures vector:", proc_vec.shape, "Nonzeros:", np.count_nonzero(proc_vec), f"Density: {proc_density:.2%}")
-
-        # POE
-        poe_vec = get_poe(conn, subject_id, enums["poe"])
-        poe_density = np.count_nonzero(poe_vec) / len(poe_vec)
-        print("POE vector:", poe_vec.shape, "Nonzeros:", np.count_nonzero(poe_vec), f"Density: {poe_density:.2%}")
-        print("POE vector raw:", poe_vec.tolist())
-        active_poe = [otype for otype, idx in enums["poe"]["order_type"].items() if poe_vec[idx] > 0]
-        print("POE active types:", active_poe)
-
-        # Services
-        svc_vec = get_services(conn, subject_id, enums["services"])
-        svc_density = np.count_nonzero(svc_vec) / len(svc_vec)
-        print("Services vector:", svc_vec.shape, "Nonzeros:", np.count_nonzero(svc_vec), f"Density: {svc_density:.2%}")
-        print("Services vector raw:", svc_vec.tolist())
-        active_services = [svc for svc, idx in enums["services"]["curr_service"].items() if svc_vec[idx] > 0]
-        print("Services active types:", active_services)
-
+        icd_codes_vector[icd_codes_enum[code]] += 1
+    
     cur.close()
-    conn.close()
+    return icd_codes_vector
+
+if __name__ == "__main__":
+    merge_database(db_path, "test")
