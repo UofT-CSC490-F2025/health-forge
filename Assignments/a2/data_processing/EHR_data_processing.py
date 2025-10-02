@@ -17,11 +17,12 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
 
     for patient in cur.execute("SELECT * FROM patients;"):
         subject_id = patient["subject_id"]
-        gender = 0 if patient["gender"] == 'M' else 1
-        age = patient["anchor_age"]
+        subject_id_array = np.array([subject_id])
+        gender = np.array([0 if patient["gender"] == 'M' else 1])
+        age = np.array([patient["anchor_age"]])
         # anchor_year = patient["anchor_year"]
         # anchor_year_group = patient["anchor_year_group"]
-        dod = 1 if patient["dod"] else 0
+        dod = np.array([1 if patient["dod"] else 0])
 
         gsn_vector = get_prescriptions(conn, subject_id, enums["prescriptions"])
         icd_codes_vector = get_diagnoses_icd(conn, subject_id, enums['diagnoses_icd'])
@@ -44,6 +45,24 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
         omr_vector = get_omr(conn, subject_id, result_mapping, vector_length)
         hcpcs_vector = get_hcpcsevents(conn, subject_id,hcpcs_map)
         pharm_vector = get_pharmacy(conn, subject_id, medication_map)
+
+        final = np.concatenate((subject_id_array, 
+                                gender, 
+                                age, 
+                                dod, 
+                                gsn_vector, 
+                                icd_codes_vector, 
+                                rx_vector, 
+                                proc_vector, 
+                                poe_vector, 
+                                svc_vector, 
+                                admission_vector, 
+                                omr_vector, 
+                                hcpcs_vector, 
+                                pharm_vector))
+        
+
+
 
 
 def get_enums(db_conn: sqlite3.Connection) -> dict:
