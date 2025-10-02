@@ -23,7 +23,7 @@ def set_up_vector_store():
 # ---------------------------------------------------------------------------
 # TABLE FEATURE EXTRACTION FUNCTIONS
 # ---------------------------------------------------------------------------
-def merge_database(db_input_path: Path, output_table_name: str) -> None:
+def merge_database(db_input_path: Path) -> None:
     input_conn = sqlite3.connect(db_input_path)
     input_conn.row_factory = sqlite3.Row   # enables name-based access
     output_conn = sqlite3.connect(output_db_path)
@@ -82,7 +82,6 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
 
     output_conn.commit()
     output_conn.close()
-    input_conn.close()
         
 
 
@@ -105,9 +104,9 @@ def get_enums(db_conn: sqlite3.Connection) -> dict:
     enums["prescriptions"]["gsn"] = {v: i for i, v in enumerate(gsn_codes)}
 
     # # --- Diagnoses (ICD codes) ---
-    # cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd;")
-    # icd_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
-    # enums["diagnoses_icd"]["icd_codes"] = {v: i for i, v in enumerate(icd_codes)}
+    cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd;")
+    icd_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
+    enums["diagnoses_icd"]["icd_codes"] = {v: i for i, v in enumerate(icd_codes)}
 
     # --- POE (order types) ---
     cur.execute("SELECT DISTINCT order_type FROM poe;")
@@ -397,4 +396,4 @@ def get_admissions(db_conn: sqlite3.Connection, subject_id: int, admission_maps:
 
 if __name__ == "__main__":
     set_up_vector_store()
-    merge_database(db_path, "test")
+    merge_database(db_path)
