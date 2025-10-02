@@ -1,21 +1,39 @@
 import sqlite3
 import numpy as np
+import os
 from pathlib import Path
 import re
 
 db_path = Path(__file__).parent.parent / "MIMIC_IV_demo.sqlite"
+output_db_path = Path(__file__).parent.parent / "vector_store.sqlite"
+
+def set_up_vector_store():
+
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        
+    conn = sqlite3.connect(output_db_path)
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS vectors(subject_id INTEGER PRIMARY KEY, vec BLOB);")
+    conn.commit()
+
+
+
 
 # ---------------------------------------------------------------------------
 # TABLE FEATURE EXTRACTION FUNCTIONS
 # ---------------------------------------------------------------------------
 def merge_database(db_input_path: Path, output_table_name: str) -> None:
-    conn = sqlite3.connect(db_input_path)
-    conn.row_factory = sqlite3.Row   # enables name-based access
-    cur = conn.cursor()
+    input_conn = sqlite3.connect(db_input_path)
+    input_conn.row_factory = sqlite3.Row   # enables name-based access
+    output_conn = sqlite3.connect(output_db_path)
+    input_cur = input_conn.cursor()
+    output_cur = output_conn.cursor()
 
-    enums = get_enums(conn)
 
-    for patient in cur.execute("SELECT * FROM patients;"):
+    enums = get_enums(input_conn)
+
+    for patient in input_cur.execute("SELECT DISTINCT * FROM patients;"):
         subject_id = patient["subject_id"]
         subject_id_array = np.array([subject_id])
         gender = np.array([0 if patient["gender"] == 'M' else 1])
@@ -24,27 +42,27 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
         # anchor_year_group = patient["anchor_year_group"]
         dod = np.array([1 if patient["dod"] else 0])
 
-        gsn_vector = get_prescriptions(conn, subject_id, enums["prescriptions"])
-        icd_codes_vector = get_diagnoses_icd(conn, subject_id, enums['diagnoses_icd'])
-        rx_vector = get_prescriptions(conn, subject_id, enums["prescriptions"])
-        proc_vector = get_procedures_icd(conn, subject_id, enums["procedures_icd"]["icd_codes"])
-        poe_vector = get_poe(conn, subject_id, enums["poe"])
-        svc_vector = get_services(conn, subject_id, enums["services"])
+        gsn_vector = get_prescriptions(input_conn, subject_id, enums["prescriptions"])
+        icd_codes_vector = get_diagnoses_icd(input_conn, subject_id, enums['diagnoses_icd'])
+        rx_vector = get_prescriptions(input_conn, subject_id, enums["prescriptions"])
+        proc_vector = get_procedures_icd(input_conn, subject_id, enums["procedures_icd"]["icd_codes"])
+        poe_vector = get_poe(input_conn, subject_id, enums["poe"])
+        svc_vector = get_services(input_conn, subject_id, enums["services"])
 
         total_admissions, admission_type_vector, admission_location_vector, discharge_location_vector = get_admissions(
-            conn, subject_id, enums["admissions"]
+            input_conn, subject_id, enums["admissions"]
         )
 
         admission_vector = np.concatenate(
             ([total_admissions], admission_type_vector, admission_location_vector, discharge_location_vector)
         )
 
-        result_mapping, vector_length = get_omr_result_names(conn)
-        hcpcs_map = get_all_hcpcs_codes(conn)
-        medication_map = get_all_drugs(conn)
-        omr_vector = get_omr(conn, subject_id, result_mapping, vector_length)
-        hcpcs_vector = get_hcpcsevents(conn, subject_id,hcpcs_map)
-        pharm_vector = get_pharmacy(conn, subject_id, medication_map)
+        result_mapping, vector_length = get_omr_result_names(input_conn)
+        hcpcs_map = get_all_hcpcs_codes(input_conn)
+        medication_map = get_all_drugs(input_conn)
+        omr_vector = get_omr(input_conn, subject_id, result_mapping, vector_length)
+        hcpcs_vector = get_hcpcsevents(input_conn, subject_id,hcpcs_map)
+        pharm_vector = get_pharmacy(input_conn, subject_id, medication_map)
 
         final = np.concatenate((subject_id_array, 
                                 gender, 
@@ -60,6 +78,14 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
                                 omr_vector, 
                                 hcpcs_vector, 
                                 pharm_vector))
+        
+        vector_blob = final.astype("float32").tobytes()
+
+        output_cur.execute("INSERT INTO vectors (subject_id, vec) VALUES (?, ?);", (subject_id, vector_blob))
+
+    output_conn.commit()
+    output_conn.close()
+    input_conn.close()
         
 
 
@@ -373,4 +399,5 @@ def get_admissions(db_conn: sqlite3.Connection, subject_id: int, admission_maps:
 
 
 if __name__ == "__main__":
+    set_up_vector_store()
     merge_database(db_path, "test")
