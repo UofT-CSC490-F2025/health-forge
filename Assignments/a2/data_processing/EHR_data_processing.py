@@ -20,13 +20,11 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
         subject_id_array = np.array([subject_id])
         gender = np.array([0 if patient["gender"] == 'M' else 1])
         age = np.array([patient["anchor_age"]])
-        # anchor_year = patient["anchor_year"]
-        # anchor_year_group = patient["anchor_year_group"]
+
         dod = np.array([1 if patient["dod"] else 0])
 
         gsn_vector = get_prescriptions(conn, subject_id, enums["prescriptions"])
         icd_codes_vector = get_diagnoses_icd(conn, subject_id, enums['diagnoses_icd'])
-        rx_vector = get_prescriptions(conn, subject_id, enums["prescriptions"])
         proc_vector = get_procedures_icd(conn, subject_id, enums["procedures_icd"]["icd_codes"])
         poe_vector = get_poe(conn, subject_id, enums["poe"])
         svc_vector = get_services(conn, subject_id, enums["services"])
@@ -52,7 +50,6 @@ def merge_database(db_input_path: Path, output_table_name: str) -> None:
                                 dod, 
                                 gsn_vector, 
                                 icd_codes_vector, 
-                                rx_vector, 
                                 proc_vector, 
                                 poe_vector, 
                                 svc_vector, 
@@ -81,10 +78,10 @@ def get_enums(db_conn: sqlite3.Connection) -> dict:
     gsn_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
     enums["prescriptions"]["gsn"] = {v: i for i, v in enumerate(gsn_codes)}
 
-    # --- Diagnoses (ICD codes) ---
-    cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd;")
-    icd_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
-    enums["diagnoses_icd"]["icd_codes"] = {v: i for i, v in enumerate(icd_codes)}
+    # # --- Diagnoses (ICD codes) ---
+    # cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd;")
+    # icd_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
+    # enums["diagnoses_icd"]["icd_codes"] = {v: i for i, v in enumerate(icd_codes)}
 
     # --- POE (order types) ---
     cur.execute("SELECT DISTINCT order_type FROM poe;")
