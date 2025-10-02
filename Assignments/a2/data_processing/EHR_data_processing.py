@@ -9,9 +9,9 @@ output_db_path = Path(__file__).parent.parent / "vector_store.sqlite"
 
 def set_up_vector_store():
 
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        
+    if os.path.exists(output_db_path):
+        os.remove(output_db_path)
+
     conn = sqlite3.connect(output_db_path)
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS vectors(subject_id INTEGER PRIMARY KEY, vec BLOB);")
@@ -24,10 +24,14 @@ def set_up_vector_store():
 # TABLE FEATURE EXTRACTION FUNCTIONS
 # ---------------------------------------------------------------------------
 def merge_database(db_input_path: Path) -> None:
+
+    set_up_vector_store() # sets up the output database vector store
+    
     input_conn = sqlite3.connect(db_input_path)
     input_conn.row_factory = sqlite3.Row   # enables name-based access
     output_conn = sqlite3.connect(output_db_path)
     input_cur = input_conn.cursor()
+    input_cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
     output_cur = output_conn.cursor()
 
 
@@ -79,6 +83,7 @@ def merge_database(db_input_path: Path) -> None:
         vector_blob = final.astype("float32").tobytes()
 
         output_cur.execute("INSERT INTO vectors (subject_id, vec) VALUES (?, ?);", (subject_id, vector_blob))
+
 
     output_conn.commit()
     output_conn.close()
@@ -392,8 +397,7 @@ def get_admissions(db_conn: sqlite3.Connection, subject_id: int, admission_maps:
 
     cur.close()
     return total_admissions, admission_type_vector, admission_location_vector, discharge_location_vector
-
+    
 
 if __name__ == "__main__":
-    set_up_vector_store()
     merge_database(db_path)
