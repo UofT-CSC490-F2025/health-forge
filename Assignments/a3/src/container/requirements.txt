@@ -1,0 +1,12 @@
+# required to serve the model
+flask==2.2.2
+gevent==22.10.2
+gunicorn==20.1.0
+
+
+# dependencies for the custom model
+boto3
+scikit-learn==1.0.2
+numpy==1.21.6
+scipy==1.7.3
+pandas==1.3.5
