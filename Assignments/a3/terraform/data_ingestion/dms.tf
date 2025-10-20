@@ -57,16 +57,16 @@ resource "aws_dms_endpoint" "src_s3" {
   endpoint_type = "source"
   engine_name   = "s3"
 
-  s3_settings {
-    bucket_name            = aws_s3_bucket.raw.bucket
-    service_access_role_arn = aws_iam_role.dms_s3_access.arn
+  # s3_settings {
+  #   bucket_name            = aws_s3_bucket.raw.bucket
+  #   service_access_role_arn = aws_iam_role.dms_s3_access.arn
 
-    # Choose the correct format for your files:
-    data_format      = "csv"  
-    csv_delimiter    = ","
-    csv_row_delimiter = "\n"
-    compression_type = "NONE"
-  }
+  #   # Choose the correct format for your files:
+  #   data_format      = "csv"  
+  #   csv_delimiter    = ","
+  #   csv_row_delimiter = "\n"
+  #   compression_type = "NONE"
+  # }
 }
 
 # Target: RDS Postgres endpoint

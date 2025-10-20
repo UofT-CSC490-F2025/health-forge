@@ -212,14 +212,34 @@ resource "aws_s3_bucket" "bucket_training_data" {
   bucket = var.s3_bucket_input_training_path
 }
 
+resource "aws_s3_bucket_ownership_controls" "training_data" {
+  bucket = aws_s3_bucket.bucket_training_data.id
+  rule {
+    object_ownership = "BucketOwnerPreferred" # allows ACLs
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "training_data" {
+  bucket                  = aws_s3_bucket.bucket_training_data.id
+  block_public_acls       = false
+  ignore_public_acls      = false
+  # keep these true unless you really intend public access via policy
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
 resource "aws_s3_bucket_acl" "bucket_training_data_acl" {
   bucket = aws_s3_bucket.bucket_training_data.id
   acl    = "private"
+   depends_on = [
+    aws_s3_bucket_ownership_controls.training_data,
+    aws_s3_bucket_public_access_block.training_data
+  ]
 }
 
 resource "aws_s3_object" "object" {
   bucket = aws_s3_bucket.bucket_training_data.id
-  key    = "iris.csv"
+  key    = "mimic_training_data.npy"
   source = var.s3_object_training_data
 }
 
@@ -227,9 +247,29 @@ resource "aws_s3_bucket" "bucket_output_models" {
   bucket = var.s3_bucket_output_models_path
 }
 
+resource "aws_s3_bucket_ownership_controls" "output_data" {
+  bucket = aws_s3_bucket.bucket_output_models.id
+  rule {
+    object_ownership = "BucketOwnerPreferred" # allows ACLs
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "output_data" {
+  bucket                  = aws_s3_bucket.bucket_output_models.id
+  block_public_acls       = false
+  ignore_public_acls      = false
+  # keep these true unless you really intend public access via policy
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
 resource "aws_s3_bucket_acl" "bucket_output_models_acl" {
   bucket = aws_s3_bucket.bucket_output_models.id
   acl    = "private"
+   depends_on = [
+    aws_s3_bucket_ownership_controls.output_data,
+    aws_s3_bucket_public_access_block.output_data
+  ]
 }
 
 #################################################
