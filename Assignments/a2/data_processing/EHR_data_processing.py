@@ -3,6 +3,9 @@ import numpy as np
 import os
 from pathlib import Path
 import re
+from sklearn.preprocessing import MinMaxScaler
+import joblib
+
 
 db_path = Path(__file__).parent.parent / "MIMIC_IV_demo.sqlite"
 output_db_path = Path(__file__).parent.parent / "vector_store.sqlite"
@@ -399,5 +402,46 @@ def get_admissions(db_conn: sqlite3.Connection, subject_id: int, admission_maps:
     return total_admissions, admission_type_vector, admission_location_vector, discharge_location_vector
     
 
+# This function extracts all patient vectors from the SQLite store, applies log+MinMax normalization,
+# and saves both the normalized .npy and the fitted scaler.
+def export_normalized_numpy(sqlite_path: Path, output_path: Path, scaler_path: Path, vector_length: int):
+    """
+    Extracts all patient vectors from the SQLite store, applies log+MinMax normalization,
+    and saves both the normalized .npy and the fitted scaler.
+    """
+    print("🔹 Loading vectors from SQLite...")
+    conn = sqlite3.connect(sqlite_path)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM vectors;")
+    n_rows = cur.fetchone()[0]
+
+    all_vectors = np.zeros((n_rows, vector_length), dtype=np.float32)
+    cur.execute("SELECT vec FROM vectors ORDER BY subject_id;")
+    for i, (vec_blob,) in enumerate(cur.fetchall()):
+        all_vectors[i, :] = np.frombuffer(vec_blob, dtype=np.float32)
+    conn.close()
+    print(f"Loaded {n_rows} vectors of length {vector_length}")
+
+    # ---- Normalization ----
+    print("🔹 Applying log1p + MinMax scaling...")
+    X_log = np.log1p(all_vectors)  # stabilize large counts
+
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    X_norm = scaler.fit_transform(X_log)
+
+    np.save(output_path, X_norm)
+    joblib.dump(scaler, scaler_path)
+    print(f"✅ Saved normalized data to {output_path}")
+    print(f"✅ Saved fitted scaler to {scaler_path}")
+    print("Min/Max example:", scaler.data_min_[:5], scaler.data_max_[:5])
+
+
 if __name__ == "__main__":
     merge_database(db_path)
+
+    vector_length = 3333
+    sqlite_path = output_db_path
+    output_path = Path(__file__).parent.parent / "ehr_norm.npy"
+    scaler_path = Path(__file__).parent.parent / "ehr_scaler.joblib"
+
+    export_normalized_numpy(sqlite_path, output_path, scaler_path, vector_length)
