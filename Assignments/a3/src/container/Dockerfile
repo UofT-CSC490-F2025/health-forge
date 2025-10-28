@@ -1,4 +1,4 @@
-FROM python:3.7
+FROM python:3.9
 
 # first layers should be dependency install so changes in code won't cause the build to
 # start from scratch.

@@ -1,0 +1,1451 @@
+{
+  "TableCount": "22",
+  "Tables": [
+    {
+      "TableName": "admissions",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/admissions/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "admittime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "dischtime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "deathtime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "admission_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "40",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "admit_provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "admission_location",
+          "ColumnType": "STRING",
+          "ColumnLength": "60",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "discharge_location",
+          "ColumnType": "STRING",
+          "ColumnLength": "60",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "insurance",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "language",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "marital_status",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "race",
+          "ColumnType": "STRING",
+          "ColumnLength": "80",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "edregtime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "edouttime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "hospital_expire_flag",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "16"
+    },
+    {
+      "TableName": "d_hcpcs",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/d_hcpcs/",
+      "TableColumns": [
+        {
+          "ColumnName": "code",
+          "ColumnType": "STRING",
+          "ColumnLength": "5",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "category",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "long_description",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "short_description",
+          "ColumnType": "STRING",
+          "ColumnLength": "180",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "4"
+    },
+    {
+      "TableName": "diagnoses_icd",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/diagnoses_icd/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "seq_num",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "icd_code",
+          "ColumnType": "STRING",
+          "ColumnLength": "7",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "icd_version",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "5"
+    },
+    {
+      "TableName": "d_icd_diagnoses",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/d_icd_diagnoses/",
+      "TableColumns": [
+        {
+          "ColumnName": "icd_code",
+          "ColumnType": "STRING",
+          "ColumnLength": "7",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "icd_version",
+          "ColumnType": "INT2",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "long_title",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "3"
+    },
+    {
+      "TableName": "d_icd_procedures",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/d_icd_procedures/",
+      "TableColumns": [
+        {
+          "ColumnName": "icd_code",
+          "ColumnType": "STRING",
+          "ColumnLength": "7",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "icd_version",
+          "ColumnType": "INT2",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "long_title",
+          "ColumnType": "STRING",
+          "ColumnLength": "222",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "3"
+    },
+    {
+      "TableName": "d_labitems",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/d_labitems/",
+      "TableColumns": [
+        {
+          "ColumnName": "itemid",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "label",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "fluid",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "category",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "4"
+    },
+    {
+      "TableName": "drgcodes",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/drgcodes/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "drg_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "drg_code",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "description",
+          "ColumnType": "STRING",
+          "ColumnLength": "195",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "drg_severity",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "drg_mortality",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "7"
+    },
+    {
+      "TableName": "emar_detail",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/emar_detail/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "emar_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "emar_seq",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "parent_field_ordinal",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "administration_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "pharmacy_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "barcode_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "reason_for_no_barcode",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "complete_dose_not_given",
+          "ColumnType": "STRING",
+          "ColumnLength": "5",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dose_due",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dose_due_unit",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dose_given",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dose_given_unit",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "will_remainder_of_dose_be_given",
+          "ColumnType": "STRING",
+          "ColumnLength": "5",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "product_amount_given",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "product_unit",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "product_code",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "product_description",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "product_description_other",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "prior_infusion_rate",
+          "ColumnType": "STRING",
+          "ColumnLength": "40",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "infusion_rate",
+          "ColumnType": "STRING",
+          "ColumnLength": "40",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "infusion_rate_adjustment",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "infusion_rate_adjustment_amount",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "infusion_rate_unit",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "route",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "infusion_complete",
+          "ColumnType": "STRING",
+          "ColumnLength": "1",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "completion_interval",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "new_iv_bag_hung",
+          "ColumnType": "STRING",
+          "ColumnLength": "1",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "continued_infusion_in_other_location",
+          "ColumnType": "STRING",
+          "ColumnLength": "1",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "restart_interval",
+          "ColumnType": "STRING",
+          "ColumnLength": "2305",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "side",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "site",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "non_formulary_visual_verification",
+          "ColumnType": "STRING",
+          "ColumnLength": "1",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "33"
+    },
+    {
+      "TableName": "emar",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/emar/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "emar_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "emar_seq",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "pharmacy_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "enter_provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "charttime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "medication",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "event_txt",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "scheduletime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "storetime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        }
+      ],
+      "TableColumnsTotal": "12"
+    },
+    {
+      "TableName": "hcpcsevents",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/hcpcsevents/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "chartdate",
+          "ColumnType": "DATE",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "hcpcs_cd",
+          "ColumnType": "STRING",
+          "ColumnLength": "5",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "seq_num",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "short_description",
+          "ColumnType": "STRING",
+          "ColumnLength": "180",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "6"
+    },
+    {
+      "TableName": "labevents",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/labevents/",
+      "TableColumns": [
+        {
+          "ColumnName": "labevent_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "specimen_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "itemid",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "order_provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "charttime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "storetime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "value",
+          "ColumnType": "STRING",
+          "ColumnLength": "200",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "valuenum",
+          "ColumnType": "REAL8",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "valueuom",
+          "ColumnType": "STRING",
+          "ColumnLength": "20",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "ref_range_lower",
+          "ColumnType": "REAL8",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "ref_range_upper",
+          "ColumnType": "REAL8",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "flag",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "priority",
+          "ColumnType": "STRING",
+          "ColumnLength": "7",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "comments",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "16"
+    },
+    {
+      "TableName": "microbiologyevents",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/microbiologyevents/",
+      "TableColumns": [
+        {
+          "ColumnName": "microevent_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "micro_specimen_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "order_provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "chartdate",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "charttime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "spec_itemid",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "spec_type_desc",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "test_seq",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "storedate",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "storetime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "test_itemid",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "test_name",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "org_itemid",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "org_name",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "isolate_num",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "quantity",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "ab_itemid",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "ab_name",
+          "ColumnType": "STRING",
+          "ColumnLength": "30",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dilution_text",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dilution_comparison",
+          "ColumnType": "STRING",
+          "ColumnLength": "20",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dilution_value",
+          "ColumnType": "REAL8",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "interpretation",
+          "ColumnType": "STRING",
+          "ColumnLength": "5",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "comments",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "25"
+    },
+    {
+      "TableName": "omr",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/omr/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "chartdate",
+          "ColumnType": "DATE",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "seq_num",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "result_name",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "result_value",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "false"
+        }
+      ],
+      "TableColumnsTotal": "5"
+    },
+    {
+      "TableName": "patients",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/patients/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "gender",
+          "ColumnType": "STRING",
+          "ColumnLength": "1",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "anchor_age",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "anchor_year",
+          "ColumnType": "INT2",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "anchor_year_group",
+          "ColumnType": "STRING",
+          "ColumnLength": "20",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "dod",
+          "ColumnType": "DATE",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "6"
+    },
+    {
+      "TableName": "pharmacy",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/pharmacy/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "pharmacy_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "starttime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "stoptime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "medication",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "proc_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "status",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "entertime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "verifiedtime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "route",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "frequency",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "disp_sched",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "infusion_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "15",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "sliding_scale",
+          "ColumnType": "STRING",
+          "ColumnLength": "1",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "lockout_interval",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "basal_rate",
+          "ColumnType": "REAL4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "one_hr_max",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "doses_per_24_hrs",
+          "ColumnType": "REAL4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "duration",
+          "ColumnType": "REAL4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "duration_interval",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "expiration_value",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "expiration_unit",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "expirationdate",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dispensation",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "fill_quantity",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "27"
+    },
+    {
+      "TableName": "poe_detail",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/poe_detail/",
+      "TableColumns": [
+        {
+          "ColumnName": "poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "poe_seq",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "field_name",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "field_value",
+          "ColumnType": "STRING",
+          "ColumnLength": "10000",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "5"
+    },
+    {
+      "TableName": "poe",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/poe/",
+      "TableColumns": [
+        {
+          "ColumnName": "poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "poe_seq",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "ordertime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "order_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "order_subtype",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "transaction_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "15",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "discontinue_of_poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "discontinued_by_poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "order_provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "order_status",
+          "ColumnType": "STRING",
+          "ColumnLength": "15",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "12"
+    },
+    {
+      "TableName": "prescriptions",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/prescriptions/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "pharmacy_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "poe_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "poe_seq",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "order_provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "starttime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "stoptime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "drug_type",
+          "ColumnType": "STRING",
+          "ColumnLength": "20",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "drug",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "formulary_drug_cd",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "gsn",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "ndc",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "prod_strength",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "form_rx",
+          "ColumnType": "STRING",
+          "ColumnLength": "25",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dose_val_rx",
+          "ColumnType": "STRING",
+          "ColumnLength": "100",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "dose_unit_rx",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "form_val_disp",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "form_unit_disp",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "doses_per_24_hrs",
+          "ColumnType": "REAL4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "route",
+          "ColumnType": "STRING",
+          "ColumnLength": "50",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "21"
+    },
+    {
+      "TableName": "procedures_icd",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/procedures_icd/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "seq_num",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "chartdate",
+          "ColumnType": "DATE",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "icd_code",
+          "ColumnType": "STRING",
+          "ColumnLength": "7",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "icd_version",
+          "ColumnType": "INT2",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "6"
+    },
+    {
+      "TableName": "provider",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/provider/",
+      "TableColumns": [
+        {
+          "ColumnName": "provider_id",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "false"
+        }
+      ],
+      "TableColumnsTotal": "1"
+    },
+    {
+      "TableName": "services",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/services/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "transfertime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "prev_service",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "curr_service",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "5"
+    },
+    {
+      "TableName": "transfers",
+      "TableOwner": "hosp",
+      "TablePath": "hosp/transfers/",
+      "TableColumns": [
+        {
+          "ColumnName": "subject_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "hadm_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "transfer_id",
+          "ColumnType": "INT4",
+          "ColumnNullable": "false"
+        },
+        {
+          "ColumnName": "eventtype",
+          "ColumnType": "STRING",
+          "ColumnLength": "10",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "careunit",
+          "ColumnType": "STRING",
+          "ColumnLength": "255",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "intime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        },
+        {
+          "ColumnName": "outtime",
+          "ColumnType": "DATETIME",
+          "ColumnNullable": "true"
+        }
+      ],
+      "TableColumnsTotal": "7"
+    }
+  ]
+}

@@ -1,6 +1,24 @@
 
+#Migration Logic
+locals {
+  # Minimal example: include everything; refine as you add per-table mappings.
+  dms_table_mappings = {
+    rules = [
+      {
+        "rule-type"      = "selection",
+        "rule-id"        = "1",
+        "rule-name"      = "include-all",
+        "object-locator" = { "schema-name" = "%", "table-name" = "%" },
+        "rule-action"    = "include"
+      }
+    ]
+  }
+
+  etd = file("${path.module}/mimiciv_hosp_external_table_definition.json")
+}
+
 # Allow DMS to read from the raw bucket
-resource "aws_iam_role" "dms_s3_access" {
+resource "aws_iam_role" "dms_s3_access" { // Define a role that will be able to access the s3
   name = "dms-s3-access-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -12,32 +30,77 @@ resource "aws_iam_role" "dms_s3_access" {
   })
 }
 
-resource "aws_iam_role_policy" "dms_s3_read" {
+resource "aws_iam_role_policy" "dms_s3_read" { // Apply the perms themselves to the role
   role = aws_iam_role.dms_s3_access.id
   policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Effect: "Allow",
-      Action: ["s3:GetObject", "s3:ListBucket"],
-      Resource: [
-        aws_s3_bucket.raw.arn,
-        "${aws_s3_bucket.raw.arn}/*"
-      ]
-    }]
+    Version : "2012-10-17",
+    Statement : [
+      # Needed to list the bucket and discover objects (and region)
+      {
+        Effect : "Allow",
+        Action : [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ],
+        Resource : [
+          "${aws_s3_bucket.raw.arn}",
+          "${aws_s3_bucket.raw.arn}/*"
+        ]
+      },
+      # Needed to read the source files and the external table definition JSON
+      {
+        Effect : "Allow",
+        Action : [
+          "s3:GetObject",
+          "s3:GetObjectVersion"
+        ],
+        Resource : [
+          "${aws_s3_bucket.raw.arn}",
+          "${aws_s3_bucket.raw.arn}/*"
+        ]
+      }
+    ]
   })
 }
 
+resource "aws_iam_service_linked_role" "dms_slr" {
+  aws_service_name = "dms.amazonaws.com"
+}
+
+resource "aws_iam_role" "dms-vpc-role" {
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect    = "Allow",
+      Principal = { Service = "dms.amazonaws.com" },
+      Action    = "sts:AssumeRole"
+    }]
+  })
+  name = "dms-vpc-role"
+}
+
+resource "aws_iam_role_policy_attachment" "dms-vpc-role-AmazonDMSVPCManagementRole" {
+  role       = aws_iam_role.dms-vpc-role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonDMSVPCManagementRole"
+}
+
 # Security group used by DMS replication instance
-resource "aws_security_group" "dms_sg" {
+resource "aws_security_group" "dms_sg" { //The DMS instance has to live inside a security group
   name   = "dms-sg"
   vpc_id = data.aws_vpc.default.id
-  # egress allow-all is fine; it needs to call RDS
+}
+
+resource "aws_vpc_security_group_egress_rule" "dms_egress" {
+  security_group_id = aws_security_group.dms_sg.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+
 }
 
 # Allow DMS -> RDS on 5432
 resource "aws_security_group_rule" "rds_ingress_from_dms" {
   type                     = "ingress"
-  security_group_id        = aws_security_group.rds_sg.id   # your existing RDS SG
+  security_group_id        = aws_security_group.rds_sg.id # your existing RDS SG
   from_port                = 5432
   to_port                  = 5432
   protocol                 = "tcp"
@@ -45,28 +108,28 @@ resource "aws_security_group_rule" "rds_ingress_from_dms" {
 }
 
 resource "aws_dms_replication_instance" "ri" {
-  replication_instance_id   = "s3-to-rds-ri"
+  replication_instance_id    = "s3-to-rds-ri"
   replication_instance_class = "dms.t3.small"
-  allocated_storage         = 50
-  vpc_security_group_ids    = [aws_security_group.dms_sg.id]
+  allocated_storage          = 50
+  vpc_security_group_ids     = [aws_security_group.dms_sg.id]
+  depends_on                 = [aws_iam_role_policy_attachment.dms-vpc-role-AmazonDMSVPCManagementRole, aws_iam_role_policy.dms_s3_read]
+  publicly_accessible        = true
 }
 
 # Source: S3 endpoint
-resource "aws_dms_endpoint" "src_s3" {
-  endpoint_id   = "src-s3"
-  endpoint_type = "source"
-  engine_name   = "s3"
+resource "aws_dms_s3_endpoint" "src_s3" {
+  endpoint_id             = "src-s3"
+  endpoint_type           = "source"
+  bucket_name             = aws_s3_bucket.raw.bucket
+  service_access_role_arn = aws_iam_role.dms_s3_access.arn
 
-  # s3_settings {
-  #   bucket_name            = aws_s3_bucket.raw.bucket
-  #   service_access_role_arn = aws_iam_role.dms_s3_access.arn
-
-  #   # Choose the correct format for your files:
-  #   data_format      = "csv"  
-  #   csv_delimiter    = ","
-  #   csv_row_delimiter = "\n"
-  #   compression_type = "NONE"
-  # }
+  # Choose the correct format for your files:
+  data_format               = "csv"
+  csv_delimiter             = ","
+  csv_row_delimiter         = "\n"
+  compression_type          = "NONE"
+  ignore_header_rows                          = 1
+  external_table_definition = file("${path.module}/mimiciv_hosp_external_table_definition.json")
 }
 
 # Target: RDS Postgres endpoint
@@ -83,33 +146,47 @@ resource "aws_dms_endpoint" "tgt_rds" {
   ssl_mode      = "require"
 }
 
-#Migration Logic
-locals {
-  # Minimal example: include everything; refine as you add per-table mappings.
-  dms_table_mappings = {
-    rules = [
-      {
-        "rule-type"  = "selection",
-        "rule-id"    = "1",
-        "rule-name"  = "include-all",
-        "object-locator" = { "schema-name" = "%", "table-name" = "%" },
-        "rule-action"= "include"
-      }
-    ]
-  }
-}
+
 
 resource "aws_dms_replication_task" "s3_to_rds" {
-  replication_task_id       = "s3-to-rds-task"
-  migration_type            = "full-load"   # or "full-load-and-cdc" later
-  replication_instance_arn  = aws_dms_replication_instance.ri.replication_instance_arn
-  source_endpoint_arn       = aws_dms_endpoint.src_s3.endpoint_arn
-  target_endpoint_arn       = aws_dms_endpoint.tgt_rds.endpoint_arn
+  replication_task_id      = "s3-to-rds-task"
+  migration_type           = "full-load" # or "full-load-and-cdc" later
+  replication_instance_arn = aws_dms_replication_instance.ri.replication_instance_arn
+  source_endpoint_arn      = aws_dms_s3_endpoint.src_s3.endpoint_arn
+  target_endpoint_arn      = aws_dms_endpoint.tgt_rds.endpoint_arn
 
-  table_mappings            = jsonencode(local.dms_table_mappings)
+  table_mappings = jsonencode(local.dms_table_mappings)
 
-  # Optional task settings JSON (tuning, LOBs, commit frequency, table prep mode)
-  # task_settings = file("${path.module}/dms-task-settings.json")
+  replication_task_settings = <<SETTINGS
+{
+  "TargetMetadata": {
+    "TargetSchema": "public",
+    "SupportLobs": true,
+    "FullLobMode": false
+  },
+  "FullLoadSettings": {
+    "TargetTablePrepMode": "DO_NOTHING",
+    "MaxFullLoadSubTasks": 8
+  },
+  "Logging": {
+    "EnableLogging": true,
+    "LogComponents": [
+      { "Id": "SOURCE_UNLOAD",  "Severity": "LOGGER_SEVERITY_DEFAULT" },
+      { "Id": "SOURCE_CAPTURE", "Severity": "LOGGER_SEVERITY_DEFAULT" },
+      { "Id": "TARGET_LOAD",    "Severity": "LOGGER_SEVERITY_DEFAULT" },
+      { "Id": "TARGET_APPLY",   "Severity": "LOGGER_SEVERITY_DEFAULT" },
+      { "Id": "TASK_MANAGER",   "Severity": "LOGGER_SEVERITY_DEFAULT" }
+    ]
+  },
+  "ErrorBehavior": {
+    "DataErrorPolicy": "LOG_ERROR",
+    "ApplyErrorDeletePolicy": "IGNORE_RECORD"
+  }
+}
+SETTINGS
+
+
+
 }
 
 # Get your task ARN easily
@@ -118,33 +195,33 @@ locals {
 }
 
 # Rule: only DMS state changes for YOUR task, when it STOPPED
-resource "aws_cloudwatch_event_rule" "dms_full_load_done" {
-  name = "dms-full-load-done"
-  event_pattern = jsonencode({
-    "source":      ["aws.dms"],
-    "detail-type": ["DMS Replication Task State Change"],
-    "resources":   [ local.dms_task_arn ],
-    "detail": {
-      "eventType": ["REPLICATION_TASK_STOPPED"]
-    }
-  })
-}
+# resource "aws_cloudwatch_event_rule" "dms_full_load_done" {
+#   name = "dms-full-load-done"
+#   event_pattern = jsonencode({
+#     "source" : ["aws.dms"],
+#     "detail-type" : ["DMS Replication Task State Change"],
+#     "resources" : [local.dms_task_arn],
+#     "detail" : {
+#       "eventType" : ["REPLICATION_TASK_STOPPED"]
+#     }
+#   })
+# }
 
-# Target: your existing Lambda
-resource "aws_cloudwatch_event_target" "invoke_vectorize" {
-  rule      = aws_cloudwatch_event_rule.dms_full_load_done.name
-  target_id = "lambda-revectorize"
-  arn       = aws_lambda_function.data_processing_handler.arn
-  input     = jsonencode({ reason = "dms_full_load_done", mode = "full_revectorize" })
-}
+# # Target: your existing Lambda
+# resource "aws_cloudwatch_event_target" "invoke_vectorize" {
+#   rule      = aws_cloudwatch_event_rule.dms_full_load_done.name
+#   target_id = "lambda-revectorize"
+#   arn       = aws_lambda_function.data_processing_handler.arn
+#   input     = jsonencode({ reason = "dms_full_load_done", mode = "full_revectorize" })
+# }
 
-# Permission so EventBridge can invoke your Lambda (scoped to this rule)
-resource "aws_lambda_permission" "allow_eventbridge_invoke" {
-  statement_id  = "AllowEventBridgeInvokeOnFullLoadDone"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.data_processing_handler.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.dms_full_load_done.arn
-}
+# # Permission so EventBridge can invoke your Lambda (scoped to this rule)
+# resource "aws_lambda_permission" "allow_eventbridge_invoke" {
+#   statement_id  = "AllowEventBridgeInvokeOnFullLoadDone"
+#   action        = "lambda:InvokeFunction"
+#   function_name = aws_lambda_function.data_processing_handler.function_name
+#   principal     = "events.amazonaws.com"
+#   source_arn    = aws_cloudwatch_event_rule.dms_full_load_done.arn
+# }
 
 

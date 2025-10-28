@@ -2,10 +2,10 @@ import sys
 import main as EHRDiff
 
 if __name__ == '__main__':
-    sys.arg = [
+    sys.argv = [
         "main.py",
         "--config", "./configs/mimic/train_dp.yaml",
-        "--workdir", "/opt/ml/", # Where sagemaker mounts stuff (and where we output)
+        "--workdir", "opt/code/ml", # Where sagemaker mounts stuff (and where we output)
         "--mode", "train",
     ]
 

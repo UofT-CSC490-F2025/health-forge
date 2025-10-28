@@ -15,7 +15,7 @@ except RuntimeError:
 
 def run_main(config):
     ###
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(config.setup.CUDA_DEVICES)
+    os.environ['CUDA_VISIBLE_DEVICES'] = ""
     ###
     processes = []
     for rank in range(config.setup.n_gpus_per_node):
@@ -94,6 +94,7 @@ def main(config):
 
 
 def execute():
+    print(sys.argv)
     sys.path.append(os.getcwd())
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', nargs="*", default=list(), required=True)
