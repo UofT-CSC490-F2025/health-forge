@@ -11,7 +11,7 @@ setup:
 data:
   path: ./data/ehr_norm.npy          # <-- your normalized NumPy file
   name: health_forge_mimic_iv
-  resolution: 3333                   # <-- dimensionality of each EHR vector
+  resolution: 3332                   # <-- dimensionality of each EHR vector
   dataloader_params:
     num_workers: 1
   n_classes: None
@@ -25,7 +25,7 @@ model:
     sigma_min: 0.002                 # slightly smaller noise floor for normalized inputs
     sigma_max: 80.
   network:
-    z_dim: 3333                      # match input dimension
+    z_dim: 3332                      # match input dimension
     time_dim: 384
     unit_dims: [1024, 512, 512, 512, 1024]   # a bit wider mid-layers to capture table correlations
     use_cfg: False

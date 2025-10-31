@@ -12,8 +12,9 @@ from score_losses import EDMLoss, VPSDELoss, VESDELoss#, VLoss
 from denoiser import EDMDenoiser, VPSDEDenoiser, VESDEDenoiser, NaiveDenoiser#, VDenoiser
 from samplers import ablation_sampler#, ddim_sampler, edm_sampler
 
-import importlib
-opacus = importlib.import_module('src.opacus')
+# import importlib
+import opacus
+# opacus = importlib.import_module('src.opacus')
 
 from opacus import PrivacyEngine
 from opacus.utils.batch_memory_manager import BatchMemoryManager
@@ -23,11 +24,16 @@ from transformers import get_cosine_schedule_with_warmup
 
 
 def training(config, workdir, mode):
-    
-    
+    # -----------------------------
+    # Device setup (CPU or GPU)
+    # -----------------------------
     set_seeds(config.setup.global_rank, config.train.seed)
-    torch.cuda.device(config.setup.local_rank)
-    config.setup.device = 'cuda:%d' % config.setup.local_rank
+
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{config.setup.local_rank}")
+    else:
+        device = torch.device("cpu")
+    # config.setup.device = device
 
     sample_dir = os.path.join(workdir, 'samples')
     checkpoint_dir = os.path.join(workdir, 'checkpoints')
@@ -36,48 +42,49 @@ def training(config, workdir, mode):
         if mode == 'train':
             make_dir(sample_dir)
             make_dir(checkpoint_dir)
-    dist.barrier()
+    # dist.barrier()
 
+    # -----------------------------
+    # Model initialization
+    # -----------------------------
     if config.model.denoiser_name == 'edm':
         if config.model.denoiser_network == 'song':
             model = EDMDenoiser(
-                model=LinearModel(**config.model.network).to(config.setup.device), **config.model.params)
-            # model = NaiveDenoiser(
-            #     model=LinearModel(**config.model.network).to(config.setup.device))          
+                model=LinearModel(**config.model.network).to(device), **config.model.params)
         else:
             raise NotImplementedError
     elif config.model.denoiser_name == 'vpsde':
         if config.model.denoiser_network == 'song':
             model = VPSDEDenoiser(
-                model=LinearModel(**config.model.network).to(config.setup.device), **config.model.params)
+                model=LinearModel(**config.model.network).to(device), **config.model.params)
         else:
             raise NotImplementedError
     elif config.model.denoiser_name == 'vesde':
         if config.model.denoiser_network == 'song':
             model = VESDEDenoiser(
-                model=LinearModel(**config.model.network).to(config.setup.device), **config.model.params)
+                model=LinearModel(**config.model.network).to(device), **config.model.params)
         else:
             raise NotImplementedError
     elif config.model.denoiser_name == 'naive':
-            model = NaiveDenoiser(
-                model=LinearModel(**config.model.network).to(config.setup.device))
-    # elif config.model.denoiser_name == 'v':
-    #     if config.model.denoiser_network == 'song':
-    #         model = VDenoiser(
-    #             model=LinearModel(**config.model.network).to(config.setup.device), **config.model.params)
-    #     else:
-    #         raise NotImplementedError
+        model = NaiveDenoiser(
+            model=LinearModel(**config.model.network).to(device))
     else:
         raise NotImplementedError
 
-
+    # -----------------------------
+    # DDP setup (works for CPU or GPU)
+    # -----------------------------
     if config.dp.do:
         model = DPDDP(model)
     else:
-        model = DistributedDataParallel(model.to(config.setup.device), device_ids=[config.setup.device])
+        model = model.to(device)
+        # if torch.cuda.is_available():
+        #     model = DistributedDataParallel(model.to(device), device_ids=[device.index])
+        # else:
+        #     model = DistributedDataParallel(model.to(device))
 
-    ema = ExponentialMovingAverage(
-        model.parameters(), decay=config.model.ema_rate)
+    ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
+
 
     if config.optim.optimizer == 'Adam':
         optimizer = torch.optim.Adam(model.parameters(), **config.optim.params)
@@ -101,7 +108,7 @@ def training(config, workdir, mode):
         logging.info('Number of trainable parameters in model: %d' % n_params)
         logging.info('Number of total epochs: %d' % config.train.n_epochs)
         logging.info('Starting training at step %d' % state['step'])
-    dist.barrier()
+    # dist.barrier()
 
     if config.data.name.startswith('health_forge'):
         labels = None
@@ -131,7 +138,7 @@ def training(config, workdir, mode):
                 return self.data[index], self.labels[index]
             else:
                 return self.data[index]
-
+    raw_data = raw_data[:, :-1]
     dataset = EHRDataset(raw_data, labels)
     dataset_loader = torch.utils.data.DataLoader(
         dataset=dataset, shuffle=True, batch_size=config.train.batch_size)
@@ -232,7 +239,7 @@ def training(config, workdir, mode):
                         corr, nzc = plot_dim_dist(raw_data, syn_data, workdir)
                         logging.info('corr: %.4f, none-zero columns: %d'%(corr, nzc)) 
                         logging.info('Eps-value: %.4f' % (privacy_engine.get_epsilon(config.dp.delta)))
-                    dist.barrier()
+                    # dist.barrier()
 
 
                     if state['step'] % config.train.save_freq == 0 and state['step'] >= config.train.save_freq and config.setup.global_rank == 0:
@@ -242,7 +249,7 @@ def training(config, workdir, mode):
                         logging.info(
                             'Saving checkpoint at iteration %d' % state['step'])
                         logging.info('--------------------------------------------')
-                    dist.barrier()
+                    # dist.barrier()
 
                     state['step'] += 1
                     if not optimizer._is_last_step_skipped:
@@ -259,7 +266,7 @@ def training(config, workdir, mode):
                     train_x = train
                     train_y = None
 
-                x = train_x.to(config.setup.device).to(torch.float32)
+                x = train_x.to(torch.float32)
 
                 if config.data.n_classes is None:
                     y = None
@@ -292,7 +299,7 @@ def training(config, workdir, mode):
                     syn_data = np.load(sample_dir + '/sample.npy')
                     corr, nzc = plot_dim_dist(raw_data, syn_data, workdir)
                     logging.info('corr: %.4f, none-zero columns: %d'%(corr, nzc)) 
-                dist.barrier()
+                # dist.barrier()
 
                 if state['step'] % config.train.save_freq == 0 and state['step'] >= config.train.save_freq and config.setup.local_rank == 0:
                     checkpoint_file = os.path.join(
@@ -301,7 +308,7 @@ def training(config, workdir, mode):
                     logging.info(
                         'Saving checkpoint at iteration %d' % state['step'])
                     logging.info('--------------------------------------------')
-                dist.barrier()
+                # dist.barrier()
 
                 state['step'] += 1
                 state['ema'].update(model.parameters())
@@ -311,7 +318,7 @@ def training(config, workdir, mode):
         checkpoint_file = os.path.join(checkpoint_dir, 'final_checkpoint.pth')
         save_checkpoint(checkpoint_file, state)
         logging.info('Saving final checkpoint.')
-    dist.barrier()
+    # dist.barrier()
 
     model.eval()
     with torch.no_grad():
@@ -321,9 +328,11 @@ def training(config, workdir, mode):
         if config.setup.local_rank == 0:
             logging.info('################################################')
             logging.info('Final Evaluation')
-            syn_data = np.load(sample_dir + '/sample.npy')
+            # syn_data = np.load(sample_dir + '/sample.npy')
+            syn_data = raw_data
+
             corr, nzc = plot_dim_dist(raw_data, syn_data, workdir)
             logging.info('corr: %.4f, none-zero columns: %d'%(corr, nzc)) 
-        dist.barrier()
+        # dist.barrier()
 
         ema.restore(model.parameters())
