@@ -31,8 +31,6 @@ def set_seeds(rank, seed):
 def make_dir(dir):
     if not os.path.exists(dir):
         os.makedirs(dir)
-    # else:
-    #     raise ValueError('Directory already exists.')
 
 
 def add_dimensions(x, n_additional_dims):
@@ -43,10 +41,11 @@ def add_dimensions(x, n_additional_dims):
 
 
 def save_checkpoint(ckpt_path, state):
+    
     saved_state = {'model': state['model'].state_dict(),
                    'ema': state['ema'].state_dict(),
                    'optimizer': state['optimizer'].state_dict(),
-                   'step': state['step']}
+                   'step': state['step'], 'input_shape': state['input_shape']}
     torch.save(saved_state, ckpt_path)
 
 

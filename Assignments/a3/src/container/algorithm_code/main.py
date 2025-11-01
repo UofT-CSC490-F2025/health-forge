@@ -15,7 +15,7 @@ except RuntimeError:
 
 def run_main(config):
     ###
-    os.environ['CUDA_VISIBLE_DEVICES'] = ""
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(config.setup.CUDA_DEVICES)
     ###
     processes = []
     for rank in range(config.setup.n_gpus_per_node):
@@ -37,14 +37,14 @@ def setup(config, fn):
     os.environ['MASTER_ADDR'] = config.setup.master_address
     os.environ['MASTER_PORT'] = '%d' % config.setup.master_port
     os.environ['OMP_NUM_THREADS'] = '%d' % config.setup.omp_n_threads
-    torch.cuda.set_device(config.setup.local_rank)
-    dist.init_process_group(backend='nccl',
-                            init_method='env://',
-                            rank=config.setup.global_rank,
-                            world_size=config.setup.global_size)
+    # torch.cuda.set_device(config.setup.local_rank)
+    # dist.init_process_group(backend='nccl', 
+    #                         init_method='env://',
+    #                         rank=config.setup.global_rank,
+    #                         world_size=config.setup.global_size)
     fn(config)
-    dist.barrier()
-    dist.destroy_process_group()
+    # dist.barrier()
+    # dist.destroy_process_group()
 
 
 def set_logger(gfile_stream):
@@ -94,7 +94,6 @@ def main(config):
 
 
 def execute():
-    print(sys.argv)
     sys.path.append(os.getcwd())
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', nargs="*", default=list(), required=True)

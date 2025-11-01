@@ -1,13 +1,13 @@
 # required to serve the model
-flask==2.2.2
-gevent==22.10.2
-gunicorn==20.1.0
-
+flask
+gevent
+gunicorn
+pandas
 
 # dependencies for the custom model
---extra-index-url https://download.pytorch.org/whl/cu113
-torch==1.11.0+cu113 
-torchvision==0.12.0+cu113
+#--extra-index-url https://download.pytorch.org/whl/cu113
+torch
+torchvision
 omegaconf==2.1.1
 numpy==1.22.4
 pillow==9.2.0
@@ -18,3 +18,4 @@ ninja==1.10.2
 einops==0.7.0
 transformers==4.36.2
 -e git+https://github.com/timudk/opacus_dpdm.git@dpdm#egg=opacus
+#

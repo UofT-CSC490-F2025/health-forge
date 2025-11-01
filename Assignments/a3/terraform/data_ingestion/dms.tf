@@ -194,34 +194,6 @@ locals {
   dms_task_arn = aws_dms_replication_task.s3_to_rds.replication_task_arn
 }
 
-# Rule: only DMS state changes for YOUR task, when it STOPPED
-# resource "aws_cloudwatch_event_rule" "dms_full_load_done" {
-#   name = "dms-full-load-done"
-#   event_pattern = jsonencode({
-#     "source" : ["aws.dms"],
-#     "detail-type" : ["DMS Replication Task State Change"],
-#     "resources" : [local.dms_task_arn],
-#     "detail" : {
-#       "eventType" : ["REPLICATION_TASK_STOPPED"]
-#     }
-#   })
-# }
 
-# # Target: your existing Lambda
-# resource "aws_cloudwatch_event_target" "invoke_vectorize" {
-#   rule      = aws_cloudwatch_event_rule.dms_full_load_done.name
-#   target_id = "lambda-revectorize"
-#   arn       = aws_lambda_function.data_processing_handler.arn
-#   input     = jsonencode({ reason = "dms_full_load_done", mode = "full_revectorize" })
-# }
-
-# # Permission so EventBridge can invoke your Lambda (scoped to this rule)
-# resource "aws_lambda_permission" "allow_eventbridge_invoke" {
-#   statement_id  = "AllowEventBridgeInvokeOnFullLoadDone"
-#   action        = "lambda:InvokeFunction"
-#   function_name = aws_lambda_function.data_processing_handler.function_name
-#   principal     = "events.amazonaws.com"
-#   source_arn    = aws_cloudwatch_event_rule.dms_full_load_done.arn
-# }
 
 

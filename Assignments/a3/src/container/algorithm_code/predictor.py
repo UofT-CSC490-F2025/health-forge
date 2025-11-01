@@ -4,15 +4,12 @@
 from __future__ import print_function
 
 import os
-import json
-import pickle
 from io import StringIO
-import sys
-import signal
-import traceback
-
+from omegaconf import OmegaConf
+import torch
+import numpy as np
+from samplers import ablation_sampler
 import flask
-
 import pandas as pd
 
 prefix = '/opt/ml/'
@@ -22,25 +19,64 @@ model_path = os.path.join(prefix, 'model')
 # It has a predict function that does a prediction based on the model and the input data.
 
 class ScoringService(object):
-    model = None                # Where we keep the model when it's loaded
+    model = None
+    input_shape = None
+    config = None   
+                 # Where we keep the model when it's loaded
+    def sample_random_batch(EHR_task, sampling_shape, sampler, device, n_classes=None):
+    # make_dir(path)
+        x = torch.randn(sampling_shape, device=device)
+        if n_classes is not None:
+            y = torch.randint(n_classes, size=(
+                sampling_shape[0],), dtype=torch.int32, device=device)
+        else:
+            y = None
 
+        x = sampler(x, y).cpu()
+        x = x.numpy()
+
+        if EHR_task == 'binary':
+            x = np.rint(np.clip(x, 0, 1))
+        elif EHR_task == 'continuous':
+            x = np.clip(x, 0, 1)
+
+        return x
+    
     @classmethod
     def get_model(cls):
         """Get the model object for this instance, loading it if it's not already loaded."""
         if cls.model == None:
-            with open(os.path.join(model_path, 'decision-tree-model.pkl'), 'rb') as inp:
-                cls.model = pickle.load(inp)
+            state = torch.load(os.path.join(model_path,"final_checkpoint.pth"), map_location="cpu")
+            config = OmegaConf.load("./configs/mimic/health_forge_train_edm.yaml")
+           
+            cls.input_shape = state['input_shape']
+            cls.model = state['model']
+            cls.model.load_state_dict(state['ema'].state_dict(), strict=False)
+            cls.config = config
+
+            
+            
         return cls.model
 
     @classmethod
-    def predict(cls, input):
+    def predict(cls):
         """For the input, do the predictions and return them.
 
         Args:
             input (a pandas dataframe): The data on which to do the predictions. There will be
                 one prediction per row in the dataframe"""
         clf = cls.get_model()
-        return clf.predict(input)
+
+        def sampler(x, y=None):
+            return ablation_sampler(x, y, clf, **cls.config.sampler)
+
+
+        EHR_task = 'binary'
+
+        return cls.sample_random_batch(EHR_task, cls.input_shape, sampler, 
+                                                     cls.config.setup.device, cls.config.data.n_classes)
+    
+    
 
 # The flask app for serving predictions
 app = flask.Flask(__name__)
@@ -60,23 +96,26 @@ def transformation():
     it to a pandas data frame for internal use and then convert the predictions back to CSV (which really
     just means one prediction per line, since there's a single column.
     """
-    data = None
+    
+    # Data is not needed for now, but will keep this csv parsing portion for future
+    # data = None
 
-    # Convert from CSV to pandas
-    if flask.request.content_type == 'text/csv':
-        print(flask.request.data)
-        data = flask.request.data.decode('utf-8')
-        print(data)
-        s = StringIO(data)
-        print(s)
-        data = pd.read_csv(s, header=None)
-    else:
-        return flask.Response(response='This predictor only supports CSV data', status=415, mimetype='text/plain')
+    # # Convert from CSV to pandas
+    # if flask.request.content_type == 'text/csv':
+    #     print(flask.request.data)
+    #     data = flask.request.data.decode('utf-8')
+    #     print(data)
+    #     s = StringIO(data)
+    #     print(s)
+    #     data = pd.read_csv(s, header=None)
+    # else:
+    #     return flask.Response(response='This predictor only supports CSV data', status=415, mimetype='text/plain')
 
-    print('Invoked with {} records'.format(data.shape[0]))
+    # print('Invoked with {} records'.format(data.shape[0]))
 
+    print('generating a new piece of EHR Data')
     # Do the prediction
-    predictions = ScoringService.predict(data)
+    predictions = ScoringService.predict()
     print(predictions)
     # Convert from numpy back to CSV
     out = StringIO()

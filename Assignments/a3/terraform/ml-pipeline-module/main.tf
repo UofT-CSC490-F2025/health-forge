@@ -192,6 +192,37 @@ resource "aws_iam_role_policy_attachment" "sagemaker_full_access" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
 }
 
+resource "aws_iam_policy" "sagemaker_cloudwatch_logs" {
+  name   = "${var.project_name}-sagemaker-cloudwatch-logs"
+  policy = <<-EOF
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "WriteSageMakerLogs",
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams",
+          "logs:PutRetentionPolicy"
+        ],
+        "Resource": [
+          "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/sagemaker/TrainingJobs*"
+        ]
+      }
+    ]
+  }
+  EOF
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_logs_access" {
+  role       = aws_iam_role.sagemaker_exec_role.name
+  policy_arn = aws_iam_policy.sagemaker_cloudwatch_logs.arn
+}
+
+
 #################################################
 # ECR Repository
 #################################################
@@ -239,7 +270,7 @@ resource "aws_s3_bucket_acl" "bucket_training_data_acl" {
 
 resource "aws_s3_object" "object" {
   bucket = aws_s3_bucket.bucket_training_data.id
-  key    = "mimic_training_data.npy"
+  key    = "ehr_norm.npy"
   source = var.s3_object_training_data
 }
 
@@ -353,7 +384,7 @@ resource "aws_sfn_state_machine" "sfn_state_machine" {
           "test": "test"
         },
         "AlgorithmSpecification": {
-          "TrainingImage": "${aws_ecr_repository.ecr_repository.repository_url}",
+          "TrainingImage": "${aws_ecr_repository.ecr_repository.repository_url}:latest",
           "TrainingInputMode": "File"
         },
         "OutputDataConfig": {
@@ -382,7 +413,7 @@ resource "aws_sfn_state_machine" "sfn_state_machine" {
     "Create Model": {
       "Parameters": {
         "PrimaryContainer": {
-          "Image": "${aws_ecr_repository.ecr_repository.repository_url}",
+          "Image": "${aws_ecr_repository.ecr_repository.repository_url}:latest",
           "Environment": {},
           "ModelDataUrl.$": "$.ModelArtifacts.S3ModelArtifacts"
         },

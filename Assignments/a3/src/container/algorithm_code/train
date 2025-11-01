@@ -1,12 +1,3 @@
-import sys
-import main as EHRDiff
-
-if __name__ == '__main__':
-    sys.argv = [
-        "main.py",
-        "--config", "./configs/mimic/train_dp.yaml",
-        "--workdir", "opt/code/ml", # Where sagemaker mounts stuff (and where we output)
-        "--mode", "train",
-    ]
-
-    EHRDiff.execute()
+#!/usr/bin/env bash
+set -euo pipefail
+exec python -u /opt/program/train.py "$@"

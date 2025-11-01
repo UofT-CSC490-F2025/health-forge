@@ -10,7 +10,11 @@ RUN apt-get -y update && apt-get install -y --no-install-recommends \
          ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir -r /opt/program/requirements.txt
+RUN pip3 install --pre --no-cache-dir -r /opt/program/requirements.txt
+
+RUN mkdir /opt/ml
+RUN mkdir /opt/ml/input
+RUN mkdir /opt/ml/input/data
 
 # Set some environment variables. PYTHONUNBUFFERED keeps Python from buffering our standard
 # output stream, which means that logs can be delivered to the user quickly. PYTHONDONTWRITEBYTECODE
@@ -25,3 +29,10 @@ ENV MODEL_PATH="/opt/ml/model"
 # Set up the program in the image
 COPY algorithm_code /opt/program
 WORKDIR /opt/program
+
+# Normalize line endings for anything we might execute
+RUN dos2unix /opt/program/train || true && \
+    find /opt/program -name "*.py" -exec dos2unix {} \; || true
+
+# Make launcher executable
+RUN chmod +x /opt/program/train
