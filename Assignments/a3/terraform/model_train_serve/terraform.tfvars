@@ -1,6 +1,5 @@
-## Change project_name to your project name
-project_name = "health-forge-ehr-diff" //put your project name here
-region = "us-east-2" //change region if desired to deploy in another region
+project_name = "health-forge-ehr-diff"
+region = "us-east-2" 
 
 ## Change instance types amd volume size for SageMaker if desired
 training_instance_type = "ml.m5.xlarge"

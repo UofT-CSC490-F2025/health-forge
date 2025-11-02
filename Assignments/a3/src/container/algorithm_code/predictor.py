@@ -1,6 +1,3 @@
-# This is the file that implements a flask server to do inferences. It's the file that you will modify to
-# implement the scoring for your own algorithm.
-
 from __future__ import print_function
 
 import os
@@ -24,9 +21,8 @@ class ScoringService(object):
     model = None
     input_shape = None
     config = None   
-                 # Where we keep the model when it's loaded
+                 
     def sample_random_batch(EHR_task, sampling_shape, sampler, device, n_classes=None):
-    # make_dir(path)
         x = torch.randn(sampling_shape, device=device)
         if n_classes is not None:
             y = torch.randint(n_classes, size=(
