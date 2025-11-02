@@ -43,7 +43,14 @@ def get_model(config, local_rank):
     else:
         raise NotImplementedError
 
-    model = DDP(model, device_ids=[local_rank])
+    # model = DDP(model, device_ids=[local_rank])
+    # -----------------------------
+    # DDP setup (works for CPU or GPU)
+    # -----------------------------
+    if config.setup.dist:
+        model = DDP(model)
+    else:
+        model = model.to(config.setup.device)
     state = torch.load(config.model.ckpt, map_location=config.setup.device)
     logging.info(model.load_state_dict(state['model'], strict=True))
     if config.model.use_ema:
@@ -91,12 +98,13 @@ def evaluation(config, workdir):
 
     set_seeds(config.setup.global_rank, config.test.seed)
     torch.cuda.device(config.setup.local_rank)
-    config.setup.device = 'cuda:%d' % config.setup.local_rank
+    if config.setup.device != "cpu":
+        config.setup.device = 'cuda:%d' % config.setup.local_rank
 
     sample_dir = os.path.join(workdir, 'samples/')
     if config.setup.global_rank == 0:
         make_dir(sample_dir)
-    dist.barrier()
+    # dist.barrier()
 
     model = get_model(config, config.setup.local_rank)
     
@@ -138,8 +146,8 @@ def evaluation(config, workdir):
         all_x_across_all_gpus = [torch.empty_like(all_x).to(
             config.setup.device) for _ in range(config.setup.global_size)]
         
-        dist.all_gather(all_labels_across_all_gpus, all_labels)
-        dist.all_gather(all_x_across_all_gpus, all_x)
+        # dist.all_gather(all_labels_across_all_gpus, all_labels)
+        # dist.all_gather(all_x_across_all_gpus, all_x)
 
         all_labels_across_all_gpus = torch.cat(all_labels_across_all_gpus)[
             :config.test.n_samples].to('cpu')
@@ -157,7 +165,7 @@ def evaluation(config, workdir):
                     all_labels_across_all_gpus)
             np.save(os.path.join(sample_dir, 'all_x'),
                     all_x_across_all_gpus)
-        dist.barrier()
+        # dist.barrier()
     
     else:
         all_x = torch.cat(all_x)
@@ -165,7 +173,7 @@ def evaluation(config, workdir):
         all_x_across_all_gpus = [torch.empty_like(all_x).to(
             config.setup.device) for _ in range(config.setup.global_size)]
         
-        dist.all_gather(all_x_across_all_gpus, all_x)
+        # dist.all_gather(all_x_across_all_gpus, all_x)
 
         all_x_across_all_gpus = torch.cat(all_x_across_all_gpus)[
             :config.test.n_samples].to('cpu')
@@ -180,4 +188,4 @@ def evaluation(config, workdir):
             np.save(os.path.join(sample_dir, 'all_x'),
                     all_x_across_all_gpus)
             
-        dist.barrier()        
+        # dist.barrier()        
