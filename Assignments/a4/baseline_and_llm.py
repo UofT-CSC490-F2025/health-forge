@@ -6,48 +6,64 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 from tqdm import tqdm
 
-# ------------------------------
 # Load dataset
-# ------------------------------
-data = np.load("ehr_norm.npy") 
+data = np.load("ehr_norm.npy")
 print("Loaded data shape:", data.shape)
 
-# Extract label and features
-# Column indices based on your description:
-# 0 - Subject ID, 1 - Gender, 2 - Age, 3 - isDead
-y = data[:, 3].astype(int)               # isDead column as label
-X = np.delete(data[:, 1:], 2, axis=1)  
+# Column mapping:
+# 0 - Subject ID, 1 - Gender, 2 - Age, 3 - isDead, 4... - EHR tables
+y = data[:, 3].astype(int)  # label
+X = np.delete(data[:, 1:], 2, axis=1)  # remove isDead from features
 
-# ------------------------------
-# Train/test split
-# ------------------------------
-X_train_num, X_test_num, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=49
-)
+# Train / Validation / Test split (70/15/15)
+X_train_full, X_temp, y_train_full, y_temp = train_test_split(X, y, test_size=0.3, random_state=42)
+X_val_num, X_test_num, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
-# ------------------------------
-# Logistic Regression Baseline
-# ------------------------------
-baseline_model = LogisticRegression(max_iter=1000)
-baseline_model.fit(X_train_num, y_train)
-y_pred_baseline = baseline_model.predict(X_test_num)
+print(f"Train: {X_train_full.shape}, Val: {X_val_num.shape}, Test: {X_test_num.shape}")
 
-print("=== Logistic Regression Baseline ===")
-print("Accuracy:", accuracy_score(y_test, y_pred_baseline))
-print("Precision:", precision_score(y_test, y_pred_baseline, zero_division=0))
-print("Recall:", recall_score(y_test, y_pred_baseline, zero_division=0))
-print("F1:", f1_score(y_test, y_pred_baseline, zero_division=0))
+# Logistic Regression Hyperparameter Search
+print("\n=== Hyperparameter Search on Validation Set ===")
+best_f1 = 0
+best_model = None
+best_params = None
 
-# ------------------------------
-# Convert EHR vector to detailed text
-# ------------------------------
+param_grid = {
+    "C": [0.01, 0.1, 1, 10, 100],
+    "penalty": ["l2"],
+    "solver": ["lbfgs"]
+}
+
+for C in param_grid["C"]:
+    model = LogisticRegression(C=C, penalty="l2", solver="lbfgs", max_iter=1000)
+    model.fit(X_train_full, y_train_full)
+    y_pred_val = model.predict(X_val_num)
+    f1 = f1_score(y_val, y_pred_val, zero_division=0)
+    print(f"C={C:<6} | Val F1={f1:.3f}")
+    if f1 > best_f1:
+        best_f1 = f1
+        best_model = model
+        best_params = {"C": C, "penalty": "l2"}
+
+print(f"\nBest Params: {best_params} | Val F1={best_f1:.3f}")
+
+# Retrain best model on full training + validation set
+X_train_combined = np.concatenate([X_train_full, X_val_num])
+y_train_combined = np.concatenate([y_train_full, y_val])
+final_model = LogisticRegression(**best_params, solver="lbfgs", max_iter=1000)
+final_model.fit(X_train_combined, y_train_combined)
+
+# Evaluate on test set
+y_pred_test = final_model.predict(X_test_num)
+
+print("\n=== Tuned Logistic Regression Baseline ===")
+print(f"Test Accuracy: {accuracy_score(y_test, y_pred_test):.3f}")
+print(f"Precision: {precision_score(y_test, y_pred_test, zero_division=0):.3f}")
+print(f"Recall: {recall_score(y_test, y_pred_test, zero_division=0):.3f}")
+print(f"F1: {f1_score(y_test, y_pred_test, zero_division=0):.3f}")
+
+# Convert EHR vector to descriptive text for LLM
 def vector_to_text(vector):
-    """
-    Convert numeric EHR vector into descriptive text suitable for Flan-T5.
-    Shows first 10 entries per table to avoid token overflow.
-    """
     text = f"Gender: {vector[0]}, Age: {vector[1]}\n"
-
     offset = 2
     table_splits = {
         "Prescriptions": 829,
@@ -60,28 +76,26 @@ def vector_to_text(vector):
         "HospitalEvents": 19,
         "Pharmacy": 584
     }
-
     for table_name, length in table_splits.items():
-        vec_slice = vector[offset : offset + length]
-        text += f"{table_name}: {vec_slice.tolist()[:10]} ...\n"  # show first 10 values
+        vec_slice = vector[offset:offset + length]
+        text += f"{table_name}: {vec_slice.tolist()[:10]} ...\n"
         offset += length
-
     return text
 
-# Convert test set to text
 X_test_texts = [vector_to_text(x) for x in X_test_num]
 
-# ------------------------------
-# Flan-T5 LLM Judge
-# ------------------------------
+# Flan-T5 LLM
 tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
 model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model.to(device)
 
-def llm_predict(text_list, batch_size=32):
+def llm_predict(text_list, batch_size=16, show_progress=False):
     preds = []
-    for i in tqdm(range(0, len(text_list), batch_size), desc="Evaluating Flan-T5"):
+    iterator = range(0, len(text_list), batch_size)
+    if show_progress:
+        iterator = tqdm(iterator, desc="Evaluating Flan-T5")
+    for i in iterator:
         batch_texts = text_list[i:i+batch_size]
         inputs = tokenizer(
             [f"Classify isDead (0 or 1) for the following patient:\n{text}" for text in batch_texts],
@@ -90,7 +104,6 @@ def llm_predict(text_list, batch_size=32):
             padding=True,
             max_length=512
         ).to(device)
-
         outputs = model.generate(**inputs, max_new_tokens=5)
         for output in outputs:
             pred_text = tokenizer.decode(output, skip_special_tokens=True).strip()
@@ -98,15 +111,32 @@ def llm_predict(text_list, batch_size=32):
             preds.append(pred_label)
     return np.array(preds)
 
-# Run LLM judge on full test set
-y_pred_llm = llm_predict(X_test_texts)
+y_pred_llm = llm_predict(X_test_texts, show_progress=False)
 
-print("\n=== Flan-T5 LLM Judge ===")
-print("Accuracy:", accuracy_score(y_test, y_pred_llm))
-print("Precision:", precision_score(y_test, y_pred_llm, zero_division=0))
-print("Recall:", recall_score(y_test, y_pred_llm, zero_division=0))
-print("F1:", f1_score(y_test, y_pred_llm, zero_division=0))
+print("\n=== Flan-T5 LLM ===")
+print(f"Accuracy: {accuracy_score(y_test, y_pred_llm):.3f}")
+print(f"Precision: {precision_score(y_test, y_pred_llm, zero_division=0):.3f}")
+print(f"Recall: {recall_score(y_test, y_pred_llm, zero_division=0):.3f}")
+print(f"F1: {f1_score(y_test, y_pred_llm, zero_division=0):.3f}")
 
+# Comparison Summary
 print("\n=== Comparison Summary ===")
-print("Baseline F1:", f1_score(y_test, y_pred_baseline))
-print("LLM Judge F1:", f1_score(y_test, y_pred_llm))
+print(f"Baseline F1: {f1_score(y_test, y_pred_test, zero_division=0):.3f}")
+print(f"LLM F1: {f1_score(y_test, y_pred_llm, zero_division=0):.3f}")
+
+# Qualitative Error Analysis
+print("\n=== Qualitative Error Analysis ===")
+errors = []
+for i in range(len(y_test)):
+    if y_pred_test[i] != y_test[i] or y_pred_llm[i] != y_test[i]:
+        errors.append({
+            "true_label": int(y_test[i]),
+            "baseline_pred": int(y_pred_test[i]),
+            "llm_pred": int(y_pred_llm[i]),
+            "text_sample": X_test_texts[i][:200] + "..."
+        })
+
+print(f"Total error cases: {len(errors)}")
+for e in errors[:5]:
+    print("\nTrue:", e["true_label"], "| Baseline:", e["baseline_pred"], "| LLM:", e["llm_pred"])
+    print("Sample:", e["text_sample"])
