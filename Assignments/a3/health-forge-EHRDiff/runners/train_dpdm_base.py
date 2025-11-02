@@ -138,7 +138,6 @@ def training(config, workdir, mode):
                 return self.data[index], self.labels[index]
             else:
                 return self.data[index]
-    raw_data = raw_data[:, :-1]
     dataset = EHRDataset(raw_data, labels)
     dataset_loader = torch.utils.data.DataLoader(
         dataset=dataset, shuffle=True, batch_size=config.train.batch_size)
