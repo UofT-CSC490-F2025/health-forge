@@ -9,6 +9,8 @@ from omegaconf import OmegaConf
 import torch
 import numpy as np
 from samplers import ablation_sampler
+from model.linear_model import LinearModel
+from denoiser import EDMDenoiser, VPSDEDenoiser, VESDEDenoiser, NaiveDenoiser
 import flask
 import pandas as pd
 
@@ -33,7 +35,7 @@ class ScoringService(object):
             y = None
 
         x = sampler(x, y).cpu()
-        x = x.numpy()
+        x = x.detach().numpy()
 
         if EHR_task == 'binary':
             x = np.rint(np.clip(x, 0, 1))
@@ -42,38 +44,75 @@ class ScoringService(object):
 
         return x
     
+    def build_model_from_config(config):
+        if torch.cuda.is_available():
+            device = torch.device(f"cuda:{config.setup.local_rank}")
+        else:
+            device = torch.device("cpu")
+        if config.model.denoiser_name == 'edm':
+            if config.model.denoiser_network == 'song':
+                model = EDMDenoiser(
+                    model=LinearModel(**config.model.network).to(device), **config.model.params)
+            else:
+                raise NotImplementedError
+        elif config.model.denoiser_name == 'vpsde':
+            if config.model.denoiser_network == 'song':
+                model = VPSDEDenoiser(
+                    model=LinearModel(**config.model.network).to(device), **config.model.params)
+            else:
+                raise NotImplementedError
+        elif config.model.denoiser_name == 'vesde':
+            if config.model.denoiser_network == 'song':
+                model = VESDEDenoiser(
+                    model=LinearModel(**config.model.network).to(device), **config.model.params)
+            else:
+                raise NotImplementedError
+        elif config.model.denoiser_name == 'naive':
+            model = NaiveDenoiser(
+                model=LinearModel(**config.model.network).to(device))
+        else:
+            raise NotImplementedError
+
+        return model    
+
+    
     @classmethod
     def get_model(cls):
         """Get the model object for this instance, loading it if it's not already loaded."""
         if cls.model == None:
+
+            #Load in stuff from Sagemaker input
             state = torch.load(os.path.join(model_path,"final_checkpoint.pth"), map_location="cpu")
-            config = OmegaConf.load("./configs/mimic/health_forge_train_edm.yaml")
-           
+            config = OmegaConf.load(os.path.join(model_path,"config.yaml"))
+
+            print(f"[GetModel] config loaded: {config}")
             cls.input_shape = state['input_shape']
-            cls.model = state['model']
-            cls.model.load_state_dict(state['ema'].state_dict(), strict=False)
+            print(f"[GetModel] input_shape: {cls.input_shape}")
+
+            cls.model = cls.build_model_from_config(config)
+            cls.model.load_state_dict(state['ema'], strict=False)
+            print(f"[GetModel] model built")
+
             cls.config = config
 
-            
             
         return cls.model
 
     @classmethod
     def predict(cls):
         """For the input, do the predictions and return them.
-
         Args:
             input (a pandas dataframe): The data on which to do the predictions. There will be
                 one prediction per row in the dataframe"""
         clf = cls.get_model()
-
         def sampler(x, y=None):
             return ablation_sampler(x, y, clf, **cls.config.sampler)
 
-
         EHR_task = 'binary'
 
-        return cls.sample_random_batch(EHR_task, cls.input_shape, sampler, 
+        snapshot_sampling_shape = (cls.input_shape, cls.config.data.resolution)
+        print(f"Generating with config: {cls.config}")
+        return cls.sample_random_batch(EHR_task, snapshot_sampling_shape, sampler, 
                                                      cls.config.setup.device, cls.config.data.n_classes)
     
     
@@ -96,30 +135,13 @@ def transformation():
     it to a pandas data frame for internal use and then convert the predictions back to CSV (which really
     just means one prediction per line, since there's a single column.
     """
-    
-    # Data is not needed for now, but will keep this csv parsing portion for future
-    # data = None
-
-    # # Convert from CSV to pandas
-    # if flask.request.content_type == 'text/csv':
-    #     print(flask.request.data)
-    #     data = flask.request.data.decode('utf-8')
-    #     print(data)
-    #     s = StringIO(data)
-    #     print(s)
-    #     data = pd.read_csv(s, header=None)
-    # else:
-    #     return flask.Response(response='This predictor only supports CSV data', status=415, mimetype='text/plain')
-
-    # print('Invoked with {} records'.format(data.shape[0]))
-
     print('generating a new piece of EHR Data')
     # Do the prediction
     predictions = ScoringService.predict()
     print(predictions)
     # Convert from numpy back to CSV
     out = StringIO()
-    pd.DataFrame({'results':predictions}).to_csv(out, header=False, index=False)
+    pd.DataFrame(predictions).to_csv(out, header=False, index=False)
     result = out.getvalue()
 
     return flask.Response(response=result, status=200, mimetype='text/csv')

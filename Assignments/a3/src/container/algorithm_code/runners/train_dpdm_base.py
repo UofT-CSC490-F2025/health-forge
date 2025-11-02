@@ -1,5 +1,6 @@
 import os
 import logging
+from omegaconf import OmegaConf
 import torch
 import numpy as np
 import torch.distributed as dist
@@ -31,9 +32,11 @@ def training(config, workdir, mode):
 
     if torch.cuda.is_available():
         device = torch.device(f"cuda:{config.setup.local_rank}")
+        config.setup.device = 'cuda:%d' % config.setup.local_rank
     else:
         device = torch.device("cpu")
-    # config.setup.device = device
+        config.setup.device = "cpu"
+    
 
     prefix = '/opt/ml/'
     sample_dir = os.path.join(prefix, 'samples')
@@ -171,8 +174,6 @@ def training(config, workdir, mode):
         loss_fn = VPSDELoss(**config.loss).get_loss
     elif config.loss.version == 'vesde':
         loss_fn = VESDELoss(**config.loss).get_loss
-    # elif config.loss.version == 'v':
-    #     loss_fn = VLoss(**config.loss).get_loss
     else:
         raise NotImplementedError
 
@@ -180,12 +181,6 @@ def training(config, workdir, mode):
     if config.sampler.guid_scale == 'None':
         config.sampler.guid_scale = None
     def sampler(x, y=None):
-        # if config.sampler.type == 'ddim':
-        #     return ddim_sampler(x, y, model, **config.sampler)
-        # elif config.sampler.type == 'edm':
-        #     return edm_sampler(x, y, model, **config.sampler)
-        # else:
-        #     raise NotImplementedError
         return ablation_sampler(x, y, model, **config.sampler)
 
 
@@ -280,8 +275,6 @@ def training(config, workdir, mode):
 
                 optimizer.zero_grad(set_to_none=True)
                 loss = torch.mean(loss_fn(model, x, y))
-                # if config.setup.local_rank == 0:
-                #     print(loss)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
@@ -302,7 +295,7 @@ def training(config, workdir, mode):
                     syn_data = np.load(sample_dir + '/sample.npy')
                     corr, nzc = plot_dim_dist(raw_data, syn_data, workdir)
                     logging.info('corr: %.4f, none-zero columns: %d'%(corr, nzc)) 
-                # dist.barrier()
+               
 
                 if state['step'] % config.train.save_freq == 0 and state['step'] >= config.train.save_freq and config.setup.local_rank == 0:
                     checkpoint_file = os.path.join(
@@ -311,7 +304,7 @@ def training(config, workdir, mode):
                     logging.info(
                         'Saving checkpoint at iteration %d' % state['step'])
                     logging.info('--------------------------------------------')
-                # dist.barrier()
+                
 
                 state['step'] += 1
                 state['ema'].update(model.parameters())
@@ -320,8 +313,8 @@ def training(config, workdir, mode):
     if config.setup.local_rank == 0:
         checkpoint_file = os.path.join(model_dir, 'final_checkpoint.pth')
         save_checkpoint(checkpoint_file, state)
-        logging.info('Saving final checkpoint.')
-    # dist.barrier()
+        OmegaConf.save(config=config, f=os.path.join(model_dir, 'config.yaml'))
+        logging.info('Final checkpoint and config saved to %s', model_dir)
 
     model.eval()
     with torch.no_grad():
@@ -331,7 +324,6 @@ def training(config, workdir, mode):
         if config.setup.local_rank == 0:
             logging.info('################################################')
             logging.info('Final Evaluation')
-            # syn_data = np.load(sample_dir + '/sample.npy')
             syn_data = raw_data
 
             corr, nzc = plot_dim_dist(raw_data, syn_data, workdir)
