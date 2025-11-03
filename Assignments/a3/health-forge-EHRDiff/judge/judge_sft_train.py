@@ -17,7 +17,7 @@ CFG = {
     "save_dir": "judge_sft",
     "batch_size": 8,
     "lr": 2e-5,
-    "epochs": 1,
+    "epochs": 5,
     "max_seq_len": 1536
 }
 
@@ -136,9 +136,13 @@ def main():
         model.train()
 
     os.makedirs(CFG["save_dir"], exist_ok=True)
-    model.save_pretrained(CFG["save_dir"])
+    torch.save(model.state_dict(), os.path.join(CFG["save_dir"], "pytorch_model.bin"))
     tok.save_pretrained(CFG["save_dir"])
-    print(f"Saved model to {CFG['save_dir']}")
+
+    with open(os.path.join(CFG["save_dir"], "train_config.json"), "w") as f:
+        json.dump(CFG, f, indent=2)
+
+    print(f"Saved model weights and tokenizer to {CFG['save_dir']}")
 
 if __name__ == "__main__":
     main()

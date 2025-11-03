@@ -32,31 +32,55 @@ class ShadowMI:
     def score(self, feats):
         return self.clf.predict_proba(feats)[:, 1]  # p(real)
 
-def compute_rewards(real, synth, lam=5.0, kappa=2.0,
-                    w_dist=0.7, w_priv=0.3, batch=512, seed=0):
+def compute_rewards(
+    real, synth,
+    lam=1.0,             # ↓ much smaller than 5.0 → preserves variation
+    kappa=0.5,           # ↓ gentler privacy penalty
+    w_dist=0.3,          # ↓ so global MMD contributes less flat signal
+    w_priv=0.7,          # ↑ emphasize per-sample privacy differences
+    local_mmd_frac=0.2,  # fraction of real samples to use per-sample
+    noise_std=0.05,      # ↑ add more random diversity
+    seed=0
+):
+    """
+    Compute per-sample rewards with higher dynamic range.
+    Combines per-sample MMD (local distance) and privacy rewards.
+    """
     rng = np.random.RandomState(seed)
     d = real.shape[1]
     mmd_est = RandomFourierMMD(d, num_features=2048, gamma=1.0, seed=seed)
 
-    # Train membership-inference model
+    # --- Train membership-inference model for privacy term ---
     mi_model = ShadowMI()
     half = len(real) // 2
     mi_model.fit(real[:half], real[half:])
 
-    # Precompute global MMD reward baseline
-    global_mmd = mmd_est.mmd(real, synth)
-    global_rdist = np.exp(-lam * global_mmd)
+    # --- Compute per-sample local MMD instead of one global value ---
+    n_real_subset = max(1, int(local_mmd_frac * len(real)))
+    r_dists = []
+    for i in range(len(synth)):
+        # sample a random small subset of real samples for each synthetic example
+        idx = rng.choice(len(real), n_real_subset, replace=False)
+        local_mmd = mmd_est.mmd(real[idx], synth[i:i+1])
+        r_dists.append(np.exp(-lam * local_mmd))
+    r_dists = np.array(r_dists)
 
-    # Compute per-sample privacy rewards
+    # --- Privacy term (per-sample) ---
     priv_scores = mi_model.score(synth)
     r_priv = np.exp(-kappa * priv_scores)
 
-    # Optionally adjust r_dist slightly by small noise to avoid exact equality
-    noise = rng.normal(0, 0.02, size=len(synth))
-    r_dist = np.clip(global_rdist + noise, 0, 1)
+    # --- Add controlled noise to r_dist to increase diversity ---
+    noise = rng.normal(0, noise_std, size=len(synth))
+    r_dists = np.clip(r_dists + noise, 0, 1)
 
-    r_total = w_dist * r_dist + w_priv * r_priv
+    # --- Combine with new weights ---
+    r_total = w_dist * r_dists + w_priv * r_priv
+
+    # --- Optional normalization to [0,1] ---
+    r_total = (r_total - r_total.min()) / (r_total.max() - r_total.min() + 1e-8)
+
     return r_total
+
 
 def main():
     ap = argparse.ArgumentParser()
