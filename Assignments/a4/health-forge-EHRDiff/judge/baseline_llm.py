@@ -13,7 +13,6 @@ from transformers import TableLLM
 
 # Metric Computation
 def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
-    """Compute realism based on Mahalanobis + KNN distances."""
     mu = np.mean(X_real, axis=0)
     cov = np.cov(X_real, rowvar=False)
     diff = X_synth - mu
@@ -32,7 +31,6 @@ def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
 
 # Vector → Table Conversion 
 def vector_to_table(vector):
-    """Convert a full EHR record vector into a structured DataFrame for TableLLM."""
     table_splits = {
         "Prescriptions": 829,
         "Diagnoses": 1472,
@@ -67,7 +65,6 @@ def vector_to_table(vector):
 
 # TableLLM Scoring 
 def llm_rate_samples_tablellm(X_synth, model, show_progress=False):
-    """Use TableLLM to assign realism scores to synthetic EHRs."""
     scores = []
     iterator = range(len(X_synth))
     if show_progress:
