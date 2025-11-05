@@ -25,8 +25,8 @@ def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
     neigh_dists, _ = neigh.kneighbors(X_synth)
     neigh_dists = np.mean(neigh_dists, axis=1)
 
-    # Weighted sum
-    score = (mah_weight * maha_dist) + (knn_weight * neigh_dists)
+    # Weighted difference
+    score = - (mah_weight * maha_dist) + (knn_weight * neigh_dists)
     # Normalize 0–1 for comparison
     score = (score - score.min()) / (score.max() - score.min())
     return score
