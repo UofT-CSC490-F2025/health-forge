@@ -6,7 +6,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from tqdm import tqdm
 import argparse
-from part3_baseline_llm import compute_realism_scores, vector_to_text  # import from your module
+from baseline_llm import compute_realism_scores, vector_to_text  # import from your module
 
 
 # ---- Helper: Extract a score from model output ----
