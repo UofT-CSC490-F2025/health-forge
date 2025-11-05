@@ -1,0 +1,65 @@
+setup:
+  runner: train_dpdm_base
+  CUDA_DEVICES: 0
+  n_gpus_per_node: 1
+  n_nodes: 1
+  node_rank: 0
+  master_address: '127.0.0.1'
+  master_port: 60202
+  omp_n_threads: 64
+
+data:
+  path: ./data/ehr_norm_trunc.npy          # <-- your normalized NumPy file
+  name: health_forge_mimic_iv
+  resolution: 3332                   # <-- dimensionality of each EHR vector
+  dataloader_params:
+    num_workers: 1
+  n_classes: None
+
+model:
+  denoiser_name: edm
+  denoiser_network: song
+  ema_rate: 0.999
+  params:
+    sigma_data: 0.14
+    sigma_min: 0.002                 # slightly smaller noise floor for normalized inputs
+    sigma_max: 80.
+  network:
+    z_dim: 3332                      # match input dimension
+    time_dim: 384
+    unit_dims: [1024, 512, 512, 512, 1024]   # a bit wider mid-layers to capture table correlations
+    use_cfg: False
+
+optim:
+  optimizer: AdamW
+  params:
+    lr: 2e-4                         # slightly lower learning rate for smoother training
+    weight_decay: 0.0
+
+sampler:
+  solver: 'heun'
+  discretization: 'edm'
+  stochastic: False
+  num_steps: 32
+  sigma_min: 0.002
+  sigma_max: 80.
+  rho: 7.
+  guid_scale: None
+
+train:
+  seed: 42
+  batch_size: 256
+  warmup_steps: 1000                 # smaller since dataset already normalized
+  n_epochs: 100                      # start with 100 for baseline; increase later if stable
+  check_freq: 1000
+  save_freq: 5000
+
+loss:
+  version: edm
+  p_mean: -1.2
+  p_std: 1.2
+  sigma_data: 0.14
+  n_classes: None
+
+dp:
+  do: False                          # keep DP off for baseline
