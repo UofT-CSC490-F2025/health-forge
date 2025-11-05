@@ -134,6 +134,15 @@ class Part3Pipeline:
             print(f"\nTrue: {e['true_label']} | Baseline: {e['baseline_pred']} | LLM Score: {e['llm_score']}")
             print("Sample:", e["text_sample"])
 
+        # === Save Baseline LLM Judge ===
+        save_dir = os.path.join(self.config.setup.root_dir, "baseline")
+        os.makedirs(save_dir, exist_ok=True)
+
+        self.model.save_pretrained(save_dir)
+        self.tokenizer.save_pretrained(save_dir)
+
+        print(f"\n[Baseline Judge Saved] → {save_dir}")
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workdir", required=True)
