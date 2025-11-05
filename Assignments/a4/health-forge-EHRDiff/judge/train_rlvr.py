@@ -19,13 +19,14 @@ def parse_score(text):
 
 
 # ---- Helper: sample model outputs (policy action) ----
-###################################################################
-# WILL TODO: THIS PROMPTING NEEDS TO MATCH BASELINE LLM PROMPTING #
-###################################################################
 
 @torch.no_grad()
 def sample_scores(texts, tokenizer, model, device):
-    prompts = [f"Rate from 1 to 10 how realistic this synthetic patient record looks:\n{t}" for t in texts]
+    # Updated prompt to match baseline
+    prompts = [
+        f"Rate from 1 to 10 how realistic this synthetic patient record looks, considering demographics and medical activity statistics.\n{t}" 
+        for t in texts
+    ]
     enc = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
 
     gen = model.generate(
@@ -40,6 +41,7 @@ def sample_scores(texts, tokenizer, model, device):
     scores = [parse_score(x) for x in decoded]
 
     return gen, enc, torch.tensor(scores, dtype=torch.float32, device=device)
+
 
 
 # ---- Helper: compute sequence log prob ----

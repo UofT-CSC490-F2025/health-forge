@@ -8,14 +8,11 @@ from scipy.stats import pearsonr
 from baseline_llm import vector_to_text, compute_realism_scores
 
 
-###################################################################
-# WILL TODO: THIS PROMPTING NEEDS TO MATCH BASELINE LLM PROMPTING #
-###################################################################
-
 def llm_rate(texts, tokenizer, model, device):
     scores = []
     for text in tqdm(texts, desc="Judging"):
-        prompt = f"Rate from 1 to 10 how realistic this synthetic patient record looks:\n{text}"
+        # Updated to match baseline prompt wording
+        prompt = f"Rate from 1 to 10 how realistic this synthetic patient record looks, considering demographics and medical activity statistics.\n{text}"
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, padding=True).to(device)
         output = model.generate(**inputs, max_new_tokens=5)
         pred = tokenizer.decode(output[0], skip_special_tokens=True).strip()
@@ -23,6 +20,7 @@ def llm_rate(texts, tokenizer, model, device):
         score = digits[0] if digits else 5
         scores.append(score)
     return np.array(scores)
+
 
 
 def main():
