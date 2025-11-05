@@ -11,11 +11,7 @@ from tqdm import tqdm
 
 # Judge-like metric calculation
 def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
-    """
-    Compute realism score for each synthetic sample:
-    score = mah_weight * MahalanobisDistance + knn_weight * mean distance to top 10% neighbors
-    Smaller score -> more realistic
-    """
+   
     # Mahalanobis distance
     mu = np.mean(X_real, axis=0)
     cov = np.cov(X_real, rowvar=False)
