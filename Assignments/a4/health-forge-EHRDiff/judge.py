@@ -26,6 +26,7 @@ class Judge:
 
         return synthetic_samples
     
+    # this score will be used in the calculation of the reward during RLVR. the calculations made are verifiable rewards.
     def score_samples(self, synthetic_samples):
         dataset_dir = os.path.join(self.config.setup.root_dir, self.config.setup.dataset_dir)
         assert os.path.exists(dataset_dir), "[ERROR] Training dataset not found"
@@ -43,10 +44,10 @@ class Judge:
         neigh.fit(train_samples)
         neigh_dists, neigh_idx  = neigh.kneighbors(synthetic_samples, return_distance=True)
         neigh_dists = np.mean(neigh_dists, axis=1)
-        
-        # Step 3: Create weighted sum of two metrics
+
+        # Step 3: Create weighted difference of two metrics
         mah_weight, knn_weight = 0.7, 0.3
-        score_per_sample = (mah_weight * mah_dist) + (knn_weight * neigh_dists)
+        score_per_sample = - (mah_weight * mah_dist) + (knn_weight * neigh_dists)
 
         return score_per_sample
 
