@@ -5,6 +5,7 @@ from runners import generate_base
 from omegaconf import OmegaConf
 import os
 from sklearn.neighbors import NearestNeighbors
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 
 class Judge:
@@ -55,16 +56,70 @@ class Judge:
 
     def train(self):
         # Generate synthetic samples
-        # Score synthetic samples
-        # Instantiate LLM
-        # Train LLM with RL based on scored samples
+        print("Generating synthetic samples...")
         synthetic_samples = self.generate_samples()
-        score_per_sample = self.score_samples(synthetic_samples)
-        print(score_per_sample.shape)
-        
 
+        # Score synthetic samples using VR metric
+        print("Scoring synthetic samples...")
+        vr_scores = self.score_samples(synthetic_samples)
+        vr_scores = np.clip(vr_scores, 0, 1)  # make sure VR scores are in 0-1
 
-        pass
+        # Convert VR scores to 1-10 for easier comparison with LLM
+        vr_labels = [float(score * 10) for score in vr_scores]
+
+        # Train baseline LLM with arbitrary scoring
+        print("Training baseline LLM with arbitrary scoring...")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
+        model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small").to(device)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+
+        # Convert EHR vectors to text
+        texts = [self.vector_to_text(x) for x in synthetic_samples]
+
+        # Generate initial arbitrary scores for the LLM (random between 1-10)
+        import random
+        arbitrary_labels = [random.randint(1, 10) for _ in synthetic_samples]
+
+        batch_size = 8
+        epochs = 1
+        for epoch in range(epochs):
+            total_loss = 0
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i+batch_size]
+                batch_labels = arbitrary_labels[i:i+batch_size]
+                batch_vr = vr_labels[i:i+batch_size]  # the "true" VR scores
+
+                inputs = tokenizer(
+                    [f"Rate from 1 to 10 how realistic this synthetic patient record looks:\n{text}" for text in batch_texts],
+                    return_tensors="pt", truncation=True, padding=True, max_length=512
+                ).to(device)
+
+                target_ids = tokenizer(
+                    [str(int(l)) for l in batch_labels],
+                    return_tensors="pt", padding=True, truncation=True, max_length=5
+                ).input_ids.to(device)
+
+                outputs = model(input_ids=inputs.input_ids, attention_mask=inputs.attention_mask, labels=target_ids)
+                
+                # RL-style penalty: multiply loss by |LLM_score - VR_score| / 10
+                batch_pred = outputs.logits.argmax(-1).float()  # predicted token IDs
+                # Convert token IDs to approximate numeric scores (simple heuristic)
+                batch_pred_scores = batch_pred[:, 0]  # first token
+                batch_vr_tensor = torch.tensor(batch_vr, device=device)
+                penalty = torch.abs(batch_pred_scores - batch_vr_tensor)
+                loss = outputs.loss + penalty.mean()
+
+                total_loss += loss.item()
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            print(f"[Baseline LLM + VR penalty] Epoch {epoch+1}/{epochs} - Avg Loss: {total_loss/len(texts):.4f}")
+
+        print("Training complete! LLM now scores arbitrarily but penalized by VR metric differences.")
+
     
 
 
