@@ -1,30 +1,28 @@
 import sqlite3
 import pandas as pd
-import boto3
+import s3fs
 
 # S3 bucket and folder
-bucket_name = "your-bucket-name"
-prefix = "mimic-iv-clinical-database-demo-2.2/"  # S3 folder containing gz files
+bucket_name = "health-forge-ehr-diff-training-data-136268833180"
+prefix = "mimic_iv/"  # folder containing the gz files
 
-# Connect to SQLite (still local on SageMaker)
-db_path = "/tmp/MIMIC_IV_demo.sqlite"  # you can write to /tmp in SageMaker
+# SQLite DB path (local in SageMaker)
+db_path = "/tmp/MIMIC_IV.sqlite"
 conn = sqlite3.connect(db_path)
 
-# Use boto3 to list files in S3
-s3 = boto3.client("s3")
-response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+# Create s3 filesystem object
+fs = s3fs.S3FileSystem()
 
-# Filter for CSV.GZ files
-csv_files = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith(".csv.gz")]
+# List all CSV.GZ files under the folder
+csv_files = fs.glob(f"s3://{bucket_name}/{prefix}*.csv.gz")
 print(f"Found {len(csv_files)} compressed CSVs in S3")
 
-# Load each file into SQLite
-for key in csv_files:
-    table = key.split("/")[-1].replace(".csv.gz", "")
-    print(f"Loading {key} into table '{table}'")
+# Load each CSV into SQLite
+for s3_path in csv_files:
+    table = s3_path.split("/")[-1].replace(".csv.gz", "")
+    print(f"Loading {s3_path} into table '{table}'")
 
-    s3_path = f"s3://{bucket_name}/{key}"
-    df = pd.read_csv(s3_path, compression='gzip')  # read directly from S3
+    df = pd.read_csv(s3_path, storage_options={'anon': False}, compression='gzip')
     df.to_sql(table, conn, if_exists="replace", index=False)
 
 conn.close()
