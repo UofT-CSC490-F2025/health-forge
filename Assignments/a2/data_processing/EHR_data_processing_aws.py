@@ -409,4 +409,4 @@ def merge_database(db_input_path: str):
 # MAIN
 # ---------------------------
 if __name__ == "__main__":
-    merge_database(LOCAL_INPUT_DB_PATH)
+    merge_database(INPUT_DB_PATH)
