@@ -52,16 +52,20 @@ def get_enums(db_conn: sqlite3.Connection) -> dict:
     enums["services"]["curr_service"] = {v: i for i, v in enumerate(services)}
 
     # Admissions
-    cur.execute("SELECT DISTINCT admission_type FROM admissions;")
-    admission_types = [row[0] for row in cur.fetchall() if row[0] is not None]
-    admission_type_map = {atype: i for i, atype in enumerate(admission_types)}
+    admission_types = [
+    'AMBULATORY OBSERVATION', 'DIRECT EMER.', 'DIRECT OBSERVATION',
+    'ELECTIVE', 'EU OBSERVATION', 'EW EMER.',
+    'OBSERVATION ADMIT', 'SURGICAL SAME DAY ADMISSION', 'URGENT'
+    ]
+    admission_type_map = {t: i for i, t in enumerate(admission_types)}
+
 
     cur.execute("SELECT DISTINCT admission_location FROM admissions;")
-    admission_locations = [row[0] for row in cur.fetchall() if row[0] is not None]
+    admission_locations = [row[0] for row in cur.fetchall()]
     admission_location_map = {loc: i for i, loc in enumerate(admission_locations)}
 
     cur.execute("SELECT DISTINCT discharge_location FROM admissions;")
-    discharge_locations = [row[0] for row in cur.fetchall() if row[0] is not None]
+    discharge_locations = [row[0] for row in cur.fetchall()]
     discharge_location_map = {loc: i for i, loc in enumerate(discharge_locations)}
 
     enums["admissions"]["admission_type"] = admission_type_map
@@ -74,13 +78,16 @@ def get_enums(db_conn: sqlite3.Connection) -> dict:
 
 def get_omr_result_names(db_conn: sqlite3.Connection):
     cur = db_conn.cursor()
-    cur.execute("SELECT DISTINCT result_name FROM omr ORDER BY result_name;")
-    all_result_names = [result[0] for result in cur.fetchall()]
-    cur.close()
 
+    cur.execute("SELECT DISTINCT result_name FROM omr ORDER BY result_name;")
+
+    all_result_names = cur.fetchall()
+    all_result_names = [result[0] for result in all_result_names]
     result_names_index_mapping = {}
+
     cur_index = 0
     for result in all_result_names:
+        
         if 'Blood Pressure' in result:
             result_names_index_mapping[result] = (cur_index, cur_index + 1)
             cur_index += 2
@@ -88,7 +95,7 @@ def get_omr_result_names(db_conn: sqlite3.Connection):
             result_names_index_mapping[result] = (cur_index,)
             cur_index += 1
 
-    return result_names_index_mapping, cur_index
+    return result_names_index_mapping, cur_index + 1
 
 
 def get_all_hcpcs_codes(db_conn: sqlite3.Connection):
