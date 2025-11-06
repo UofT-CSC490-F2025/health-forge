@@ -9,6 +9,7 @@ from sklearn.neighbors import NearestNeighbors
 import torch
 from omegaconf import OmegaConf
 from runners import generate_base
+import re
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -83,29 +84,48 @@ class Part3Pipeline:
     # LLM Table Scoring
     def llm_rate_samples_tablellm(self, X_synth, show_progress=False):
         scores = []
-        iterator = range(len(X_synth))
-        if show_progress:
-            iterator = tqdm(iterator, desc="Rating synthetic EHRs (TableLLM)")
+        iterator = tqdm(range(len(X_synth)), desc="Rating synthetic EHRs (TableLLM)") if show_progress else range(len(X_synth))
 
         for i in iterator:
             df = vector_to_table(X_synth[i])
             table_str = df.to_csv(index=False)
-            prompt = (
-                "[INST]Rate from 1 to 10 how realistic this synthetic patient record looks, "
-                "considering demographics and medical activity statistics.\n"
-                "### [Table]\n"
-                f"{table_str}"
-                "[/INST]"
-            )
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding=True, max_length=512).to(self.device)
-            outputs = self.model.generate(**inputs, max_new_tokens=5)
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-            digits = [int(s) for s in response if s.isdigit()]
-            score = digits[0] if digits else 5
+            prompt = (
+                "You are a clinical data auditor.\n"
+                "Given the synthetic patient record below, rate how realistic it is.\n"
+                "Return ONLY a single integer from 1 to 10.\n\n"
+                f"{table_str}\n\n"
+                "Rating (1-10):"
+            )
+
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding=True, max_length=512).to(self.device)
+
+            input_ids = inputs["input_ids"]
+            input_length = input_ids.shape[1]
+
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=3,
+                do_sample=False,
+                temperature=0.0,
+            )
+
+            generated_tokens = outputs[0][input_length:]
+            response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
+            print("Response:", response)  # Debug print
+            
+            match = re.search(r"\b([1-9]|10)\b", response)
+            score = int(match.group(1)) if match else 5
+
+
+            print("score:", score)  # Debug print
+
             scores.append(score)
 
         return np.array(scores)
+
+
 
     # Generate Synthetic Samples
     def generate_synthetic(self):
