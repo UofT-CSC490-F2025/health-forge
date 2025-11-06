@@ -29,5 +29,5 @@ print(f"Finished writing tables into {db_path}")
 
 
 s3 = boto3.client("s3")
-s3.upload_file(db_path, bucket_name, f"{prefix}MIMIC_IV_demo.sqlite")
+s3.upload_file(db_path, bucket_name, f"{prefix}MIMIC_IV.sqlite")
 print("SQLite DB uploaded to S3")
