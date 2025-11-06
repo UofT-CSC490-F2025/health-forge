@@ -144,8 +144,8 @@ class Part3Pipeline:
         X_real = self.load_real()
         X_synth = self.generate_synthetic()
 
-        # Only evaluate first 10 samples
-        n_eval = 10
+        # Only evaluate first 100 samples
+        n_eval = 100
         X_synth_eval = X_synth[:n_eval]
         y_true = np.ones(n_eval, dtype=int)  # all synthetic
 
@@ -182,12 +182,13 @@ class Part3Pipeline:
             df = vector_to_table(X_synth_eval[i])
             print(df)
 
-        # Save results
+        # SAVE MODEL (this is what you need for RLVR)
         save_dir = os.path.join(self.config.setup.root_dir, "baseline_tablellm")
         os.makedirs(save_dir, exist_ok=True)
-        np.save(os.path.join(save_dir, "baseline_scores.npy"), baseline_scores)
-        np.save(os.path.join(save_dir, "llm_scores.npy"), llm_scores)
-        print(f"\n[Baseline TableLLM Judge Completed] → Results saved in {save_dir}")
+        self.model.save_pretrained(save_dir)
+        self.tokenizer.save_pretrained(save_dir)
+
+        print(f"\n✅ Baseline Model Saved → {save_dir}")
 
 
 
