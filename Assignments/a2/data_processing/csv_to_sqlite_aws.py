@@ -20,7 +20,7 @@ for s3_path in csv_files:
     with fs.open(s3_path, 'rb') as f:
         # Read in chunks of 100,000 rows
         chunksize = 100_000
-        for i, chunk in enumerate(pd.read_csv(f, compression='gzip', chunksize=chunksize)):
+        for i, chunk in enumerate(pd.read_csv(f, compression='gzip', low_memory=False, chunksize=chunksize)):
             chunk.to_sql(table, conn, if_exists='append' if i > 0 else 'replace', index=False)
             print(f"  Written chunk {i+1} for table {table}")
 
