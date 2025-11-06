@@ -6,7 +6,7 @@ import boto3
 
 bucket_name = "health-forge-ehr-diff-training-data-136268833180"
 prefix = "mimic_iv/"
-db_path = "/tmp/MIMIC_IV_demo.sqlite"
+db_path = "/tmp/MIMIC_IV.sqlite"
 conn = sqlite3.connect(db_path)
 fs = s3fs.S3FileSystem()
 
