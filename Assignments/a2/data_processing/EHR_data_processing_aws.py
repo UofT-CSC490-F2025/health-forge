@@ -10,7 +10,7 @@ import tempfile
 # ---------------------------
 BUCKET_NAME = "health-forge-ehr-diff-training-data-136268833180"
 S3_PREFIX = "mimic_iv"
-INPUT_DB_FILENAME = "MIMIC_IV_demo.sqlite"
+INPUT_DB_FILENAME = "MIMIC_IV.sqlite"
 OUTPUT_DB_PATH = "/tmp/vector_store.sqlite"
 
 s3_client = boto3.client("s3")
