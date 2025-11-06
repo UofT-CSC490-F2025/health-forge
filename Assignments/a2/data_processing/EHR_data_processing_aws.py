@@ -10,20 +10,13 @@ import boto3
 BUCKET_NAME = "health-forge-ehr-diff-training-data-136268833180"
 S3_PREFIX = "mimic_iv"
 INPUT_DB_FILENAME = "MIMIC_IV_demo.sqlite"
-LOCAL_INPUT_DB_PATH = f"/tmp/{INPUT_DB_FILENAME}"  # download S3 DB here
+# Use your local copy directly
+INPUT_DB_PATH = f"/path/to/your/local/{INPUT_DB_FILENAME}"  
 OUTPUT_DB_PATH = "/tmp/vector_store.sqlite"
 
+# If you want to keep S3 client for future use, you can still initialize it
+import boto3
 s3_client = boto3.client("s3")
-
-# ---------------------------
-# DOWNLOAD INPUT DB FROM S3
-# ---------------------------
-def download_input_db():
-    if not os.path.exists(LOCAL_INPUT_DB_PATH):
-        s3_client.download_file(BUCKET_NAME, f"{S3_PREFIX}/{INPUT_DB_FILENAME}", LOCAL_INPUT_DB_PATH)
-        print(f"Downloaded {INPUT_DB_FILENAME} from S3 to {LOCAL_INPUT_DB_PATH}")
-    else:
-        print(f"{LOCAL_INPUT_DB_PATH} already exists, skipping download.")
 
 # ---------------------------
 # SETUP VECTOR STORE
@@ -416,5 +409,4 @@ def merge_database(db_input_path: str):
 # MAIN
 # ---------------------------
 if __name__ == "__main__":
-    download_input_db()
     merge_database(LOCAL_INPUT_DB_PATH)
