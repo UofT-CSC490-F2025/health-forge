@@ -3,6 +3,7 @@ import numpy as np
 import os
 import re
 import boto3
+import tempfile
 
 # ---------------------------
 # AWS S3 CONFIG
@@ -10,10 +11,9 @@ import boto3
 BUCKET_NAME = "health-forge-ehr-diff-training-data-136268833180"
 S3_PREFIX = "mimic_iv"
 INPUT_DB_FILENAME = "MIMIC_IV_demo.sqlite"
-# Use your local copy directly
-INPUT_DB_PATH = f"/path/to/your/local/{INPUT_DB_FILENAME}"  
 OUTPUT_DB_PATH = "/tmp/vector_store.sqlite"
 
+s3_client = boto3.client("s3")
 # If you want to keep S3 client for future use, you can still initialize it
 import boto3
 s3_client = boto3.client("s3")
@@ -409,4 +409,17 @@ def merge_database(db_input_path: str):
 # MAIN
 # ---------------------------
 if __name__ == "__main__":
-    merge_database(INPUT_DB_PATH)
+    # Create a temporary file to hold the SQLite DB from S3
+    with tempfile.NamedTemporaryFile() as tmp_db_file:
+        # Download the S3 DB into the temp file
+        s3_client.download_file(
+            BUCKET_NAME,
+            f"{S3_PREFIX}/{INPUT_DB_FILENAME}",
+            tmp_db_file.name
+        )
+        print(f"Downloaded {INPUT_DB_FILENAME} from S3 to temporary path {tmp_db_file.name}")
+
+        # Call your merge_database function with the temp file path
+        merge_database(tmp_db_file.name)
+
+    print(f"Finished creating vector store: {OUTPUT_DB_PATH}")
