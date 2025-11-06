@@ -6,7 +6,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from tqdm import tqdm
 import argparse
-from baseline_llm import compute_realism_scores, vector_to_text  # import from your module
+from baseline_llm import compute_realism_scores, vector_to_table  # import from your module
 
 
 # ---- Helper: Extract a score from model output ----
@@ -24,9 +24,14 @@ def parse_score(text):
 def sample_scores(texts, tokenizer, model, device):
     # Updated prompt to match baseline
     prompts = [
-        f"Rate from 1 to 10 how realistic this synthetic patient record looks, considering demographics and medical activity statistics.\n{t}" 
+        "[INST]Rate from 1 to 10 how realistic this synthetic patient record looks, "
+        "considering demographics and medical activity statistics.\n"
+        "### [Table]\n"
+        f"{t}"
+        "[/INST]"
         for t in texts
     ]
+
     enc = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
 
     gen = model.generate(
@@ -80,7 +85,7 @@ class RLVRTrainer:
         vr_scores = compute_realism_scores(X_real, X_synth)
         vr_scores = torch.tensor(vr_scores, dtype=torch.float32, device=self.device)
 
-        texts = [vector_to_text(x) for x in X_synth[:max_samples]]
+        texts = [vector_to_table(x) for x in X_synth[:max_samples]]
         avg_loss = 0
         n = 0
 

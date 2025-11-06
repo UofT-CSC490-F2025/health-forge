@@ -12,7 +12,13 @@ def llm_rate(texts, tokenizer, model, device):
     scores = []
     for text in tqdm(texts, desc="Judging"):
         # Updated to match baseline prompt wording
-        prompt = f"Rate from 1 to 10 how realistic this synthetic patient record looks, considering demographics and medical activity statistics.\n{text}"
+        prompt = (
+        "[INST]Rate from 1 to 10 how realistic this synthetic patient record looks, "
+        "considering demographics and medical activity statistics.\n"
+        "### [Table]\n"
+        f"{text}"
+        "[/INST]"
+        )
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, padding=True).to(device)
         output = model.generate(**inputs, max_new_tokens=5)
         pred = tokenizer.decode(output[0], skip_special_tokens=True).strip()

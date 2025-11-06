@@ -1,5 +1,7 @@
 import argparse
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -8,11 +10,12 @@ import torch
 from omegaconf import OmegaConf
 from runners import generate_base
 from tqdm import tqdm
-from transformers import TableLLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 # Metric Computation
 def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
+    X_real = X_real[:, 1:]
     mu = np.mean(X_real, axis=0)
     cov = np.cov(X_real, rowvar=False)
     diff = X_synth - mu
@@ -29,7 +32,7 @@ def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
     return score
 
 
-# Vector → Table Conversion 
+# Vector → Table Conversion
 def vector_to_table(vector):
     table_splits = {
         "Prescriptions": 829,
@@ -63,72 +66,132 @@ def vector_to_table(vector):
     return pd.DataFrame([data])
 
 
-# TableLLM Scoring 
-def llm_rate_samples_tablellm(X_synth, model, show_progress=False):
-    scores = []
-    iterator = range(len(X_synth))
-    if show_progress:
-        iterator = tqdm(iterator, desc="Rating synthetic EHRs (TableLLM)")
-
-    for i in iterator:
-        df = vector_to_table(X_synth[i])
-        response = model.run(
-            prompt="Rate from 1 to 10 how realistic this synthetic patient record looks, considering demographics and medical activity statistics.",
-            table=df
-        )
-
-        digits = [int(s) for s in response if s.isdigit()]
-        score = digits[0] if digits else 5
-        scores.append(score)
-
-    return np.array(scores)
-
-
 # Main Baseline Pipeline
 class Part3Pipeline:
     def __init__(self, config):
         self.config = config
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print("\n[Initializing TableLLM model ...]")
-        self.model = TableLLM.from_pretrained("RUCKBReasoning/TableLLM-base")
+
+        print("\n[Initializing TableLLM-8b model ...]")
+        model_name = "RUCKBReasoning/TableLLM-8b"  # regular hyphen
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", torch_dtype=torch.float16)
+
+        self.model.eval()
         print("[Model ready]\n")
 
+    # LLM Table Scoring
+    def llm_rate_samples_tablellm(self, X_synth, show_progress=False):
+        scores = []
+        iterator = range(len(X_synth))
+        if show_progress:
+            iterator = tqdm(iterator, desc="Rating synthetic EHRs (TableLLM)")
+
+        for i in iterator:
+            df = vector_to_table(X_synth[i])
+            table_str = df.to_csv(index=False)
+            prompt = (
+                "[INST]Rate from 1 to 10 how realistic this synthetic patient record looks, "
+                "considering demographics and medical activity statistics.\n"
+                "### [Table]\n"
+                f"{table_str}"
+                "[/INST]"
+            )
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding=True, max_length=512).to(self.device)
+            outputs = self.model.generate(**inputs, max_new_tokens=5)
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            digits = [int(s) for s in response if s.isdigit()]
+            score = digits[0] if digits else 5
+            scores.append(score)
+
+        return np.array(scores)
+
+    # Generate Synthetic Samples
     def generate_synthetic(self):
+
+        # This part is commented out when using an existing synthetic data file
+        '''
         workdir = os.path.join(self.config.setup.root_dir, self.config.setup.workdir)
         generate_base.evaluation(self.config, workdir)
         sample_file = os.path.join(workdir, "samples", "all_x.npy")
         assert os.path.exists(sample_file), "[ERROR] Failed to generate synthetic samples"
         return np.load(sample_file)
+        '''
+        
+        sample_file = os.path.join(
+        self.config.setup.root_dir,
+        self.config.setup.workdir,
+        "judge_train", 
+        "samples",
+        "all_x.npy"
+    )
+    
+        # Ensure the file exists
+        assert os.path.exists(sample_file), f"[ERROR] Synthetic sample file not found: {sample_file}"
 
+        # Load and return the synthetic samples
+        return np.load(sample_file)
+
+    # Load Real Dataset
     def load_real(self):
         dataset_path = os.path.join(self.config.setup.root_dir, self.config.setup.dataset_dir)
         assert os.path.exists(dataset_path), "[ERROR] Real dataset not found"
         return np.load(dataset_path)
 
+    # Run Evaluation
     def run(self):
         X_real = self.load_real()
         X_synth = self.generate_synthetic()
 
-        baseline_scores = compute_realism_scores(X_real, X_synth)
-        baseline_pred = (baseline_scores < 0.5).astype(int)
+        # Only evaluate first 10 samples
+        n_eval = 10
+        X_synth_eval = X_synth[:n_eval]
+        y_true = np.ones(n_eval, dtype=int)  # all synthetic
 
-        llm_scores = llm_rate_samples_tablellm(X_synth[:100], self.model, show_progress=True)
-        llm_pred = (llm_scores > 5).astype(int)
+        # Baseline: score-based classifier
+        baseline_scores = compute_realism_scores(X_real, X_synth_eval)
+        baseline_threshold = 0.5
+        baseline_pred = (baseline_scores > baseline_threshold).astype(int)
 
-        y_true = llm_pred
-        y_pred_baseline = baseline_pred[:len(y_true)]
+        # LLM: rate samples
+        llm_scores = self.llm_rate_samples_tablellm(X_synth_eval, show_progress=True)
+        llm_threshold = 5
+        llm_pred = (llm_scores > llm_threshold).astype(int)
 
+        # Quantitative Evaluation
         print("\n=== Baseline vs TableLLM Evaluation ===")
-        print(f"Accuracy: {accuracy_score(y_true, y_pred_baseline):.3f}")
-        print(f"Precision: {precision_score(y_true, y_pred_baseline, zero_division=0):.3f}")
-        print(f"Recall: {recall_score(y_true, y_pred_baseline, zero_division=0):.3f}")
-        print(f"F1: {f1_score(y_true, y_pred_baseline, zero_division=0):.3f}")
+        print("\n-- Baseline Classifier --")
+        print(f"Accuracy: {accuracy_score(y_true, baseline_pred):.3f}")
+        print(f"Precision: {precision_score(y_true, baseline_pred, zero_division=0):.3f}")
+        print(f"Recall: {recall_score(y_true, baseline_pred, zero_division=0):.3f}")
+        print(f"F1: {f1_score(y_true, baseline_pred, zero_division=0):.3f}")
 
+        print("\n-- TableLLM Classifier --")
+        print(f"Accuracy: {accuracy_score(y_true, llm_pred):.3f}")
+        print(f"Precision: {precision_score(y_true, llm_pred, zero_division=0):.3f}")
+        print(f"Recall: {recall_score(y_true, llm_pred, zero_division=0):.3f}")
+        print(f"F1: {f1_score(y_true, llm_pred, zero_division=0):.3f}")
+
+        # Qualitative Analysis: disagreement examples
+        disagree_idx = np.where(baseline_pred != llm_pred)[0]
+        print(f"\nDisagreement examples (up to 5 shown, total {len(disagree_idx)}):")
+        for i in disagree_idx[:5]:
+            print(f"\nSample index: {i}")
+            print(f"Baseline prediction: {baseline_pred[i]}, LLM prediction: {llm_pred[i]}, LLM score: {llm_scores[i]:.1f}")
+            df = vector_to_table(X_synth_eval[i])
+            print(df)
+
+        # Save results
         save_dir = os.path.join(self.config.setup.root_dir, "baseline_tablellm")
         os.makedirs(save_dir, exist_ok=True)
+        np.save(os.path.join(save_dir, "baseline_scores.npy"), baseline_scores)
+        np.save(os.path.join(save_dir, "llm_scores.npy"), llm_scores)
         print(f"\n[Baseline TableLLM Judge Completed] → Results saved in {save_dir}")
 
 
+
+# Argument Parsing
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workdir", required=True)
@@ -138,6 +201,7 @@ def parse_args():
     return parser.parse_args()
 
 
+# Main
 def main():
     args = parse_args()
     config = OmegaConf.load(args.model_cfg)
