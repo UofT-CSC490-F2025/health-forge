@@ -4,32 +4,74 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.neighbors import NearestNeighbors
 import torch
 from omegaconf import OmegaConf
-from runners import generate_base
 import re
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
+from sklearn.preprocessing import StandardScaler
+from sklearn.covariance import LedoitWolf
+import numpy as np
+import numpy as np
 
 # Metric Computation
-def compute_realism_scores(X_real, X_synth, mah_weight=0.7, knn_weight=0.3):
-    X_real = X_real[:, 1:]
-    mu = np.mean(X_real, axis=0)
-    cov = np.cov(X_real, rowvar=False)
-    diff = X_synth - mu
-    maha_dist = np.sqrt(np.sum((diff @ np.linalg.pinv(cov)) * diff, axis=1) + 1e-9)
+def compute_realism_scores(X_real, X_synth, mah_weight=0.85, knn_weight=0.15, neighbors=5):
 
-    n_neighbors = max(1, int(0.1 * X_real.shape[0]))
-    neigh = NearestNeighbors(n_neighbors=n_neighbors)
-    neigh.fit(X_real)
-    neigh_dists, _ = neigh.kneighbors(X_synth)
-    neigh_dists = np.mean(neigh_dists, axis=1)
+    # --- MAHALANOBIS scoring (smaller = better) ---
+    MAHA_BEST = 12   # anything ≤ 12 → score 10
+    MAHA_WORST = 35.0  # anything ≥ 35 → score 1
 
-    score = - (mah_weight * maha_dist) + (knn_weight * neigh_dists)
-    score = (score - score.min()) / (score.max() - score.min())
+    # --- kNN scoring (larger = better) ---
+    KNN_WORST = 20.0  # collapse / too similar
+    KNN_BEST = 40.0   # comfortably distinct but still in manifold
+
+
+    Xr_raw = X_real[:, 1:]
+    Xs_raw = X_synth
+
+    # Standardize both using REAL distribution only
+    scaler = StandardScaler().fit(Xr_raw)
+    Xr = scaler.transform(Xr_raw)
+    Xs = scaler.transform(Xs_raw)
+
+    # Stable covariance estimate → Mahalanobis
+    lw = LedoitWolf().fit(Xr)
+    Sigma_inv = np.linalg.inv(lw.covariance_)
+    diff_s = Xs - lw.location_
+    maha_dist = np.sqrt(np.sum((diff_s @ Sigma_inv) * diff_s, axis=1))
+
+    # kNN distances
+    neigh = NearestNeighbors(n_neighbors=neighbors).fit(Xr)
+    knn_dist = neigh.kneighbors(Xs, return_distance=True)[0].mean(axis=1)
+
+    # Linear map to [0,1], where 1 = best, 0 = worst
+    maha_t = (MAHA_WORST - maha_dist) / (MAHA_WORST - MAHA_BEST)
+    maha_t = np.clip(maha_t, 0.0, 1.0)
+
+    # Convert to 1–10
+    maha_score = 1 + 9 * maha_t
+
+    # Linear map to [0,1], where 1 = best, 0 = worst
+    knn_t = (knn_dist - KNN_WORST) / (KNN_BEST - KNN_WORST)
+    knn_t = np.clip(knn_t, 0.0, 1.0)
+
+    # Convert to 1–10
+    knn_score = 1 + 9 * knn_t
+
+    # --- Combine ---
+    score = mah_weight * maha_score + knn_weight * knn_score
+
+    # Round to nearest integer in 1–10 range
+    score = np.rint(score).astype(int)
+
+    
+    # === Print Summary ===
+    print("\n=== Baseline Realism Score Summary (1–10) ===")
+    print(f"Combined Score: mean={score.mean():.2f}, std={score.std():.2f}, min={score.min():.2f}, max={score.max():.2f}")
+    print(f"Mahalanobis Subscore: mean={maha_score.mean():.2f}, std={maha_score.std():.2f}, min={maha_score.min():.2f}, max={maha_score.max():.2f}")
+    print(f"kNN Subscore: mean={knn_score.mean():.2f}, std={knn_score.std():.2f}, min={knn_score.min():.2f}, max={knn_score.max():.2f}")
+
     return score
 
 
@@ -114,7 +156,7 @@ class Part3Pipeline:
             response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
 
             print("Response:", response)  # Debug print
-            
+
             match = re.search(r"\b([1-9]|10)\b", response)
             score = int(match.group(1)) if match else 5
 
@@ -164,41 +206,46 @@ class Part3Pipeline:
         X_real = self.load_real()
         X_synth = self.generate_synthetic()
 
-        # Only evaluate first 100 samples
+        # Only evaluate first 100 synthetic samples
         n_eval = 100
         X_synth_eval = X_synth[:n_eval]
-        y_true = np.ones(n_eval, dtype=int)  # all synthetic
 
-        # Baseline: score-based classifier
+        # Baseline realism score (1–10)
         baseline_scores = compute_realism_scores(X_real, X_synth_eval)
-        baseline_threshold = 0.5
-        baseline_pred = (baseline_scores > baseline_threshold).astype(int)
 
-        # LLM: rate samples
+        # TableLLM realism score (1–10)
         llm_scores = self.llm_rate_samples_tablellm(X_synth_eval, show_progress=True)
-        llm_threshold = 5
-        llm_pred = (llm_scores > llm_threshold).astype(int)
 
-        # Quantitative Evaluation
-        print("\n=== Baseline vs TableLLM Evaluation ===")
-        print("\n-- Baseline Classifier --")
-        print(f"Accuracy: {accuracy_score(y_true, baseline_pred):.3f}")
-        print(f"Precision: {precision_score(y_true, baseline_pred, zero_division=0):.3f}")
-        print(f"Recall: {recall_score(y_true, baseline_pred, zero_division=0):.3f}")
-        print(f"F1: {f1_score(y_true, baseline_pred, zero_division=0):.3f}")
+        from scipy.stats import pearsonr, spearmanr
 
-        print("\n-- TableLLM Classifier --")
-        print(f"Accuracy: {accuracy_score(y_true, llm_pred):.3f}")
-        print(f"Precision: {precision_score(y_true, llm_pred, zero_division=0):.3f}")
-        print(f"Recall: {recall_score(y_true, llm_pred, zero_division=0):.3f}")
-        print(f"F1: {f1_score(y_true, llm_pred, zero_division=0):.3f}")
+        print("\n=== Realism Score Comparison (Ordinal 1–10) ===")
 
-        # Qualitative Analysis: disagreement examples
-        disagree_idx = np.where(baseline_pred != llm_pred)[0]
-        print(f"\nDisagreement examples (up to 5 shown, total {len(disagree_idx)}):")
-        for i in disagree_idx[:5]:
+        print("\n-- Baseline Realism Scores --")
+        print(f"Mean: {baseline_scores.mean():.2f}")
+        print(f"Std:  {baseline_scores.std():.2f}")
+
+        print("\n-- TableLLM Realism Scores --")
+        print(f"Mean: {llm_scores.mean():.2f}")
+        print(f"Std:  {llm_scores.std():.2f}")
+
+        # Correlation agreement
+        pearson_corr, _ = pearsonr(baseline_scores, llm_scores)
+        spearman_corr, _ = spearmanr(baseline_scores, llm_scores)
+
+        print("\n-- Agreement Between Evaluators --")
+        print(f"Pearson Correlation (linear similarity): {pearson_corr:.3f}")
+        print(f"Spearman Correlation (rank similarity):  {spearman_corr:.3f}")
+
+        # Largest realism disagreements
+        differences = np.abs(baseline_scores - llm_scores)
+        sorted_idx = np.argsort(-differences)
+
+        print(f"\n=== Top Realism Disagreement Examples (largest score gaps) ===")
+        for i in sorted_idx[:5]:
             print(f"\nSample index: {i}")
-            print(f"Baseline prediction: {baseline_pred[i]}, LLM prediction: {llm_pred[i]}, LLM score: {llm_scores[i]:.1f}")
+            print(f"Baseline realism score: {baseline_scores[i]}")
+            print(f"TableLLM realism score: {llm_scores[i]}")
+            print(f"Difference: {differences[i]}")
             df = vector_to_table(X_synth_eval[i])
             print(df)
 
