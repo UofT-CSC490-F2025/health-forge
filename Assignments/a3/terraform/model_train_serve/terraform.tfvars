@@ -1,9 +1,9 @@
 project_name = "health-forge-ehr-diff"
-region = "us-east-2" 
+region = "ca-central-1" 
 
 ## Change instance types amd volume size for SageMaker if desired
-training_instance_type = "ml.m5.xlarge"
-inference_instance_type = "ml.c5.large"
+training_instance_type = "ml.g5.xlarge"
+inference_instance_type = "ml.g5.xlarge"
 volume_size_sagemaker = 5
 
 ## Should not be changed with the current folder structure
