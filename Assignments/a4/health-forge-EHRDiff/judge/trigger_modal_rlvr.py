@@ -6,9 +6,9 @@ if __name__ == "__main__":
         real_s3_key="health-forge-data-processing/ehr_norm.npy",
         synth_s3_key="health-forge-data-processing/workdirs/judge_train/samples/all_x.npy",
         out_s3_prefix="health-forge-data-processing/rlvr_judge",
-        epochs=3,
+        epochs=10,
         lr=1e-5,
-        kl_beta=0.05
+        kl_beta=0.01
         )
 
         # Stream logs live

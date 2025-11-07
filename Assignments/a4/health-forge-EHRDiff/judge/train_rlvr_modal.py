@@ -153,8 +153,8 @@ def sample_scores(vectors, tokenizer, model, device):
         **enc,
         max_new_tokens=4,
         do_sample=True,
-        temperature=0.9,
-        top_p=0.9,
+        temperature=1.2,
+        top_p=0.95,
         pad_token_id=tokenizer.eos_token_id
     )
 
@@ -175,56 +175,65 @@ def sample_scores(vectors, tokenizer, model, device):
 
     scores = torch.tensor(scores, dtype=torch.float32, device=device)
 
-    return gen_ids, enc, scores
+    return gen_ids, input_lengths, scores
 
 
 
 # ---- Helper: compute sequence log prob ----
 # needed because RLVR performs a policy-gradient update, which is based on log-probs, not standard loss
 def seq_logprob(model, input_ids, attn_mask, labels=None):
-    """
-    Compute sequence log-probabilities.
-    If labels=None, compute log-probs for input_ids itself (causal LM).
-    """
     if labels is None:
         labels = input_ids.clone()
-    
-    outputs = model(input_ids=input_ids, attention_mask=attn_mask, labels=labels)
+
+    outputs = model(input_ids=input_ids, attention_mask=attn_mask, labels=None)  # don't ask HF to compute loss
     logits = outputs.logits
+
+    # Build mask & safe labels for gather
     token_mask = (labels != -100).float()
+    safe_labels = labels.clone()
+    safe_labels[safe_labels == -100] = 0  # any valid id (0) is fine; mask will zero it out
 
     log_probs = F.log_softmax(logits, dim=-1)
-    token_logp = log_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1) * token_mask
+    token_logp = log_probs.gather(-1, safe_labels.unsqueeze(-1)).squeeze(-1) * token_mask
 
-    return token_logp.sum(dim=1)  # sum over tokens → shape [batch]
-
+    return token_logp.sum(dim=1)
 
 # ---- RLVR Trainer ----
 class RLVRTrainer:
-    def __init__(self, lr=1e-5, kl_beta=0.05, device="cuda"):
+    def __init__(self, lr=1e-5, kl_beta=0.01, device="cuda"):
         self.device = device
 
-        # --- Load directly from Hugging Face ---
-        model_name = "RUCKBReasoning/TableLLM-8b"  # replace baseline_dir
+        model_name = "Qwen/Qwen2.5-1.5B-Instruct"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+        pad_id = self.tokenizer.pad_token_id
+        dtype = torch.bfloat16  # Best for A100 memory stability
 
         self.policy = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map={"": "cuda"},   # or "auto" if you have multiple GPUs
-            offload_folder="offload",
-            dtype=torch.float16
+            torch_dtype=dtype,
+            device_map="auto"
         )
+        self.policy.config.pad_token_id = pad_id
+        self.policy.config.use_cache = False
+
         self.ref = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map={"": "cpu"},  # fully on CPU
-            dtype=torch.float16
+            torch_dtype=dtype,
+            device_map="auto"
         ).eval()
+        self.ref.config.pad_token_id = pad_id
+        self.ref.config.use_cache = False
+        for p in self.ref.parameters():
+            p.requires_grad_(False)
 
         self.opt = torch.optim.AdamW(self.policy.parameters(), lr=lr)
         self.kl_beta = kl_beta
 
-    def train_epoch(self, X_real, X_synth, batch=2, max_samples=256):
-        # compute verifiable realism scores
+
+    def train_epoch(self, X_real, X_synth, batch=4, max_samples=256):
         vectors = X_synth[:max_samples]
         vr_scores = compute_realism_scores(X_real, vectors)
         vr_scores = torch.tensor(vr_scores, dtype=torch.float32, device=self.device)
@@ -236,31 +245,70 @@ class RLVRTrainer:
             batch_vectors = vectors[i:i+batch]
             batch_vr = vr_scores[i:i+batch]
 
-            # --- 1) Sample new sequences for exploration ---
-            gen_ids, enc_inputs, llm_scores = sample_scores(batch_vectors, self.tokenizer, self.policy, self.device)
+            gen_ids, input_lengths, llm_scores = sample_scores(
+                batch_vectors, self.tokenizer, self.policy, self.device
+            )
 
-            # --- 2) Compute log-probs on the original input_ids ---
-            labels = enc_inputs.input_ids.clone()
+            # Decode the generated sequences to inspect the rating output
+            decoded = self.tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
+
+            print("\n====== SCORE DEBUG ======")
+            for j in range(len(decoded)):
+                print(f"[Sample {i+j}]")
+                print(f"Extracted rating (llm_scores): {llm_scores[j].item()}")
+                print(f"Baseline REALISM score (batch_vr): {batch_vr[j].item()}")
+                print("-------------------------")
+            
+            # --- DEBUG BLOCK (safe, lightweight)
+            if i == 0:  # only print first batch of each epoch
+                print("\n====== POST-GENERATION DEBUG ======")
+                print(f"gen_ids shape: {gen_ids.shape}")
+                print(f"input_lengths: {input_lengths.tolist()}")
+                print(f"llm_scores: {llm_scores.tolist()}")
+                print(f"batch_vr (baseline realism): {batch_vr.tolist()}")
+
+            # ✅ Build full attention mask
+            attn_mask = (gen_ids != self.tokenizer.pad_token_id)  # dtype=bool
+
+            # ✅ Create labels and mask out prompt
+            labels = gen_ids.clone()
+
+            # mask out prompt
+            for row, L in enumerate(input_lengths.tolist()):
+                labels[row, :L] = -100
+
+            # ❗ also mask PAD/EOS (critical fix)
             labels[labels == self.tokenizer.pad_token_id] = -100
 
-            logp_policy = seq_logprob(self.policy, enc_inputs.input_ids, enc_inputs.attention_mask, labels)
+            if i == 0:
+                print("\n====== LABEL MASK DEBUG ======")
+                print("labels unique values:", torch.unique(labels))
+                print("Count of masked positions (-100):", (labels == -100).sum().item())
+                print("Count of continuation positions:", (labels != -100).sum().item())
+                print("Sample decoded continuation:")
+                print(self.tokenizer.decode(gen_ids[0][input_lengths[0]:], skip_special_tokens=True))
+
+            # ✅ Compute log-probabilities only over continuation tokens
+            logp_policy = seq_logprob(self.policy, gen_ids, attn_mask, labels)
 
             with torch.no_grad():
-                logp_ref = seq_logprob(
-                    self.ref,
-                    enc_inputs.input_ids.cpu(),
-                    enc_inputs.attention_mask.cpu(),
-                    labels.cpu()
-                ).to(self.device)
+                logp_ref = seq_logprob(self.ref, gen_ids, attn_mask, labels)
 
-            # --- 3) Compute reward & advantage ---
+            # ✅ Stable reward
             reward = 1 - (torch.abs(llm_scores - batch_vr) / 9.0)
             reward = reward.clamp(0, 1)
             advantage = reward - reward.mean()
 
-            # --- 4) Policy + KL loss ---
             policy_loss = -(advantage * logp_policy).mean()
             kl_loss = (logp_policy - logp_ref).mean()
+
+            if i == 0:
+                print("\n====== ADVANTAGE DEBUG ======")
+                print("llm_scores:", llm_scores)
+                print("batch_vr:", batch_vr)
+                print("reward:", reward)
+                print("advantage:", advantage)
+
             loss = policy_loss + self.kl_beta * kl_loss
 
             self.opt.zero_grad()
@@ -272,7 +320,6 @@ class RLVRTrainer:
             n += len(batch_vectors)
             torch.cuda.empty_cache()
 
-
         return avg_loss / n
 
     def save(self, path):
@@ -280,6 +327,58 @@ class RLVRTrainer:
         self.policy.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
         print(f"\n[RLVR Model Saved] → {path}")
+
+    def evaluate(self, X_real, X_synth, n_eval=100):
+        # Slice evaluation set
+        X_synth_eval = X_synth[:n_eval]
+
+        # 1. Baseline realism (real similarity)
+        baseline_scores = compute_realism_scores(X_real, X_synth_eval)
+        baseline_scores = np.array(baseline_scores, dtype=np.float32)
+
+        # 2. Model (LLM) realism using the *trained* policy model
+        llm_scores = []
+        for vec in tqdm(X_synth_eval, desc="Policy Model Scoring"):
+            _, _, score = sample_scores(
+                vec[None, :], self.tokenizer, self.policy, self.device
+            )  # returns tensor of length 1
+            llm_scores.append(score.item())
+        llm_scores = np.array(llm_scores, dtype=np.float32)
+
+        # 3. Compute statistics and correlations
+        from scipy.stats import pearsonr, spearmanr
+
+        print("\n=== RLVR Model Evaluation ===")
+
+        print("\n-- Baseline Realism Scores --")
+        print(f"Mean: {baseline_scores.mean():.2f}")
+        print(f"Std:  {baseline_scores.std():.2f}")
+
+        print("\n-- RLVR Model Realism Scores --")
+        print(f"Mean: {llm_scores.mean():.2f}")
+        print(f"Std:  {llm_scores.std():.2f}")
+
+        pearson_corr, _ = pearsonr(baseline_scores, llm_scores)
+        spearman_corr, _ = spearmanr(baseline_scores, llm_scores)
+
+        print("\n-- Agreement Between Evaluators --")
+        print(f"Pearson Correlation (linear similarity): {pearson_corr:.3f}")
+        print(f"Spearman Correlation (rank similarity):  {spearman_corr:.3f}")
+
+        # 4. Show worst disagreements
+        differences = np.abs(baseline_scores - llm_scores)
+        sorted_idx = np.argsort(-differences)
+
+        print(f"\n=== Top Disagreement Examples ===")
+        for i in sorted_idx[:5]:
+            print(f"\nSample {i}:")
+            print(f"Baseline: {baseline_scores[i]}")
+            print(f"RLVR Model: {llm_scores[i]}")
+            print(f"Difference: {differences[i]}")
+            print(vector_to_table(X_synth_eval[i]))
+
+        # Returns scores so you can plot or track improvement
+        return baseline_scores, llm_scores
 
 
 # ---------------------------
@@ -307,7 +406,7 @@ def run_rlvr(
     out_s3_prefix: str,        # S3 prefix to save RLVR model
     epochs: int = 3,
     lr: float = 1e-5,
-    kl_beta: float = 0.05,
+    kl_beta: float = 0.01,
 ):
     tmp_root = tempfile.mkdtemp()
     print(f"📂 Working in temp dir: {tmp_root}")
@@ -338,8 +437,13 @@ def run_rlvr(
 
     # --- Training loop ---
     for epoch in range(epochs):
-        loss = trainer.train_epoch(X_real, X_synth)
+        loss = trainer.train_epoch(X_real, X_synth, batch=4, max_samples=100) # batch and samples adjusted for small dataset
         print(f"Epoch {epoch+1} Loss = {loss:.4f}")
+
+        baseline_scores, rlvr_scores = trainer.evaluate(X_real, X_synth)
+        print("Baseline scores:", baseline_scores[:10])
+        print("RLVR scores:", rlvr_scores[:10])
+    
 
     # --- Save RLVR model locally ---
     out_dir = os.path.join(tmp_root, "rlvr_model")
@@ -365,5 +469,5 @@ def main():
         out_s3_prefix="health-forge-data-processing/rlvr_judge",
         epochs=3,
         lr=1e-5,
-        kl_beta=0.05
+        kl_beta=0.01
     )
