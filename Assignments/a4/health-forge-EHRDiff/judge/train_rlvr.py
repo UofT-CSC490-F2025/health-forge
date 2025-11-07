@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 import argparse
 from baseline_llm import compute_realism_scores, vector_to_table  # import from your module
@@ -19,33 +19,65 @@ def parse_score(text):
 
 
 # ---- Helper: sample model outputs (policy action) ----
-
 @torch.no_grad()
-def sample_scores(texts, tokenizer, model, device):
-    # Updated prompt to match baseline
+def sample_scores(vectors, tokenizer, model, device):
+    import re
+    
+    # Convert vectors → table CSV
+    tables = [vector_to_table(v).to_csv(index=False) for v in vectors]
+
+    # SAME PROMPT AS EVALUATION
     prompts = [
-        "[INST]Rate from 1 to 10 how realistic this synthetic patient record looks, "
-        "considering demographics and medical activity statistics.\n"
-        "### [Table]\n"
-        f"{t}"
-        "[/INST]"
-        for t in texts
+        (
+            "You are a clinical data auditor.\n"
+            "Given the synthetic patient record below, rate how realistic it is.\n"
+            "Return ONLY a single integer from 1 to 10.\n\n"
+            f"{tbl}\n\n"
+            "Rating (1-10):"
+        )
+        for tbl in tables
     ]
 
-    enc = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
+    # Tokenize
+    enc = tokenizer(
+        prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=512
+    ).to(device)
 
-    gen = model.generate(
+    input_ids = enc["input_ids"]
+    input_lengths = (input_ids != tokenizer.pad_token_id).sum(dim=1)
+
+    # Generate with sampling (RL exploration)
+    gen_ids = model.generate(
         **enc,
-        max_new_tokens=5,
+        max_new_tokens=4,
         do_sample=True,
+        temperature=0.9,
         top_p=0.9,
-        temperature=0.9
+        pad_token_id=tokenizer.eos_token_id
     )
 
-    decoded = tokenizer.batch_decode(gen, skip_special_tokens=True)
-    scores = [parse_score(x) for x in decoded]
+    # Slice continuation tokens for each sample (Batched)
+    continuations = [
+        gen_ids[i][input_lengths[i]:]    # remove the prompt portion
+        for i in range(len(gen_ids))
+    ]
 
-    return gen, enc, torch.tensor(scores, dtype=torch.float32, device=device)
+    # Decode + extract scores
+    decoded = tokenizer.batch_decode(continuations, skip_special_tokens=True)
+
+    scores = []
+    for text in decoded:
+        text = text.strip().replace(",", " ")
+        m = re.search(r"\b(10|[1-9])\b", text)
+        scores.append(int(m.group(1)) if m else 5)
+
+    scores = torch.tensor(scores, dtype=torch.float32, device=device)
+
+    return gen_ids, enc, scores
 
 
 
@@ -70,10 +102,11 @@ class RLVRTrainer:
         self.tokenizer = AutoTokenizer.from_pretrained(baseline_dir)
 
         # the LLM baseline model that we are improving
-        self.policy = AutoModelForSeq2SeqLM.from_pretrained(baseline_dir).to(device)
-
+        self.policy = AutoModelForCausalLM.from_pretrained(baseline_dir).to(device)
         # the frozen reference model for KL penalty
-        self.ref = AutoModelForSeq2SeqLM.from_pretrained(baseline_dir).to(device).eval()
+        self.ref = AutoModelForCausalLM.from_pretrained(baseline_dir).to(device).eval()
+
+
         for p in self.ref.parameters():
             p.requires_grad_(False)
 
@@ -82,34 +115,33 @@ class RLVRTrainer:
 
     def train_epoch(self, X_real, X_synth, batch=16, max_samples=256):
         # compute verifiable realism scores
-        vr_scores = compute_realism_scores(X_real, X_synth)
+        vectors = X_synth[:max_samples]
+        vr_scores = compute_realism_scores(X_real, vectors)
         vr_scores = torch.tensor(vr_scores, dtype=torch.float32, device=self.device)
 
-        texts = [vector_to_table(x) for x in X_synth[:max_samples]]
         avg_loss = 0
         n = 0
 
-        for i in tqdm(range(0, len(texts), batch), desc="RLVR Training"):
-            batch_texts = texts[i:i+batch]
+        for i in tqdm(range(0, len(vectors), batch), desc="RLVR Training"):
+            batch_vectors = vectors[i:i+batch]
             batch_vr = vr_scores[i:i+batch]
 
             # 1) Sample model output
-            gen_ids, enc_inputs, llm_scores = sample_scores(batch_texts, self.tokenizer, self.policy, self.device)
+            gen_ids, enc_inputs, llm_scores = sample_scores(batch_vectors, self.tokenizer, self.policy, self.device)
 
             # prepare labels for logprob calc
             labels = gen_ids.clone()
             labels[labels == self.tokenizer.pad_token_id] = -100
 
-            # 2) Convert VR realism score (0–1) → target rating (1–10)
-            vr_target = 1 + 9 * batch_vr
+            # 2) VR target already in 1–10
+            vr_target = batch_vr
 
-            # 3) Compute reward based on alignment
+            # 3) Reward
             reward = 1 - (torch.abs(llm_scores - vr_target) / 9.0)
             reward = reward.clamp(0, 1)
-            # this makes it so that only better than average samples get positive advantage
             advantage = reward - reward.mean()
 
-            # 4) Policy & KL loss
+            # 4) Loss
             logp_policy = seq_logprob(self.policy, enc_inputs.input_ids, enc_inputs.attention_mask, labels)
             with torch.no_grad():
                 logp_ref = seq_logprob(self.ref, enc_inputs.input_ids, enc_inputs.attention_mask, labels)
@@ -118,14 +150,13 @@ class RLVRTrainer:
             kl_loss = (logp_policy - logp_ref).mean()
             loss = policy_loss + self.kl_beta * kl_loss
 
-            # 5) Optimize
             self.opt.zero_grad()
             loss.backward()
             clip_grad_norm_(self.policy.parameters(), 1.0)
             self.opt.step()
 
-            avg_loss += loss.item() * len(batch_texts)
-            n += len(batch_texts)
+            avg_loss += loss.item() * len(batch_vectors)
+            n += len(batch_vectors)
 
         return avg_loss / n
 
