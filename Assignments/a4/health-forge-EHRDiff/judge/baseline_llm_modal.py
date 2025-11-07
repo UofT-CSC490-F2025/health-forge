@@ -254,6 +254,19 @@ class Part3Pipeline:
 
         print(f"\n✅ Baseline Model Saved → {save_dir}")
 
+        # --- Upload to S3 ---
+        s3_bucket = "health-forge-data-processing"
+        s3_prefix = "baseline_tablellm"
+        s3 = boto3.client("s3")
+        for root, dirs, files in os.walk(save_dir):
+            for file in files:
+                local_path = os.path.join(root, file)
+                relative_path = os.path.relpath(local_path, save_dir)
+                s3_key = os.path.join(s3_prefix, relative_path)
+                s3.upload_file(local_path, s3_bucket, s3_key)
+                print(f"✅ Uploaded {local_path} → s3://{s3_bucket}/{s3_key}")
+
+
 # ---------------------------
 # Modal App
 # ---------------------------
@@ -261,6 +274,7 @@ app = modal.App("tablellm-evaluation")
 
 @gpu_func := app.function(
     gpu="A100",
+    timeout=7200,
     secrets=[modal.Secret.from_name("aws-secret")],
     image=modal.Image.debian_slim().pip_install([
         "torch", "transformers", "scikit-learn", "pandas", "numpy", "tqdm", "omegaconf", "boto3", "scipy", "accelerate"
