@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, LogitsProcessor, LogitsProcessorList
 from tqdm import tqdm
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
@@ -12,6 +12,17 @@ from sklearn.neighbors import NearestNeighbors
 import modal
 import tempfile
 import boto3
+
+
+
+class AllowedTokensProcessor(LogitsProcessor):
+    def __init__(self, valid_ids):
+        self.valid_ids = set(valid_ids)
+
+    def __call__(self, input_ids, scores):
+        mask = torch.full_like(scores, float("-inf"))
+        mask[:, list(self.valid_ids)] = 0
+        return scores + mask
 
 # Metric Computation
 def compute_realism_scores(X_real, X_synth, mah_weight=0.85, knn_weight=0.15, neighbors=5):
@@ -148,15 +159,23 @@ def sample_scores(vectors, tokenizer, model, device):
     input_ids = enc["input_ids"]
     input_lengths = (input_ids != tokenizer.pad_token_id).sum(dim=1)
 
-    # Generate with sampling (RL exploration)
+    # Gather all token IDs that represent "0"–"9" (Done to maintain single token output. Will be mapped back to 1-10 later)
+    valid_nums = [str(i) for i in range(0, 10)]
+    valid_tokens = tokenizer.convert_tokens_to_ids(valid_nums)
+
+    logits_processor = LogitsProcessorList([AllowedTokensProcessor(valid_tokens)])
+
     gen_ids = model.generate(
         **enc,
-        max_new_tokens=4,
-        do_sample=True,
+        max_new_tokens=1,
+        do_sample=False,
         temperature=1.2,
         top_p=0.95,
-        pad_token_id=tokenizer.eos_token_id
+        pad_token_id=tokenizer.eos_token_id,
+        logits_processor=logits_processor,
+        eos_token_id=tokenizer.eos_token_id,
     )
+
 
     # Slice continuation tokens for each sample (Batched)
     continuations = [
@@ -169,9 +188,11 @@ def sample_scores(vectors, tokenizer, model, device):
 
     scores = []
     for text in decoded:
-        text = text.strip().replace(",", " ")
-        m = re.search(r"\b(10|[1-9])\b", text)
-        scores.append(int(m.group(1)) if m else 5)
+        pred = int(text) + 1
+        if text not in valid_nums:
+            print("!!!INVALID GENERATION!!!")
+            print(text)
+        scores.append(pred)
 
     scores = torch.tensor(scores, dtype=torch.float32, device=device)
 
@@ -295,7 +316,7 @@ class RLVRTrainer:
                 logp_ref = seq_logprob(self.ref, gen_ids, attn_mask, labels)
 
             # ✅ Stable reward
-            reward = 1 - (torch.abs(llm_scores - batch_vr) / 9.0)
+            reward = 1 - (torch.abs(llm_scores - batch_vr) / 9.0)**2
             reward = reward.clamp(0, 1)
             advantage = reward - reward.mean()
 
