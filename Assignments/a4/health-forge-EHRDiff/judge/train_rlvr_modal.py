@@ -485,9 +485,9 @@ def run_rlvr(
 @app.local_entrypoint()
 def main():
     run_rlvr.remote(
-        real_s3_key="healthforge-data-processing/ehr_norm.npy",
-        synth_s3_key="healthforge-data-processing/workdirs/judge_train/samples/all_x.npy",
-        out_s3_prefix="healthforge-data-processing/rlvr_judge",
+        real_s3_key="health-forge-data-processing/ehr_norm.npy",
+        synth_s3_key="health-forge-data-processing/workdirs/judge_train/samples/all_x.npy",
+        out_s3_prefix="health-forge-data-processing/rlvr_judge",
         epochs=3,
         lr=1e-5,
         kl_beta=0.01

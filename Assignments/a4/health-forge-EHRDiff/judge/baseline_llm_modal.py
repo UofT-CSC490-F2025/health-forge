@@ -182,7 +182,7 @@ class Part3Pipeline:
         return np.load(sample_file)
         '''
         
-        s3_bucket = "healthforge-data-processing"
+        s3_bucket = "health-forge-data-processing"
         s3_key = "workdirs/judge_train/samples/all_x.npy"
         local_path = "/tmp/all_x.npy"
 
@@ -255,7 +255,7 @@ class Part3Pipeline:
         print(f"\n✅ Baseline Model Saved → {save_dir}")
 
         # --- Upload to S3 ---
-        s3_bucket = "healthforge-data-processing"
+        s3_bucket = "health-forge-data-processing"
         s3_prefix = "baseline_tablellm"
         s3 = boto3.client("s3")
         for root, dirs, files in os.walk(save_dir):
