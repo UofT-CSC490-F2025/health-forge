@@ -19,7 +19,7 @@ FINAL_S3_KEY = "patient_vectors.npy"
 TEMP_DIR = "/tmp"
 
 BATCH_SIZE = 512    # patients per GPU task
-NUM_WORKERS = 10     # concurrent GPU workers
+NUM_WORKERS = 8     # concurrent GPU workers
 
 
 # ---------------------------
@@ -382,36 +382,34 @@ def main():
     user = "healthforgedb"
     password = "mimicpassword"
 
+    # batch to resume from
+    START_BATCH = 303  # change this to whatever batch you want to start from
+
     conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password, sslmode="require")
     cur = conn.cursor()
 
     # fetch all patient IDs
     cur.execute("SELECT DISTINCT subject_id FROM patients ORDER BY subject_id;")
     subject_rows = cur.fetchall()
+    cur.close()
+    conn.close()
     subject_ids = [r[0] for r in subject_rows]
     total = len(subject_ids)
     if total == 0:
         logger.warning("No patients found.")
         return
 
-    batch_size = 512  # or tune
-    NUM_WORKERS = 10   # max number of parallel GPU workers
-    START_BATCH = 250  # resume from this batch
+    batch_size = 512
+    NUM_WORKERS = 8
     batches = [subject_ids[i:i+batch_size] for i in range(0, total, batch_size)]
     logger.info(f"Total patients={total}, batch_size={batch_size}, num_batches={len(batches)}")
 
     # ---------------------------
-    # Launch workers in parallel using spawn()
+    # Launch workers from START_BATCH
     # ---------------------------
     handles = []
-    s3 = boto3.client("s3")
-
-    for idx, batch in enumerate(batches):
-
-        # skip already completed batches
-        if idx < START_BATCH:
-            logger.info(f"Skipping batch {idx}, already uploaded.")
-            continue
+    for idx in range(START_BATCH, len(batches)):
+        batch = batches[idx]
 
         # throttle workers
         while len(handles) >= NUM_WORKERS:
@@ -420,7 +418,6 @@ def main():
 
             for h in handles:
                 try:
-                    # non-blocking check
                     res = h.get(timeout=0)
                     done.append((h, res))
                 except TimeoutError:
@@ -429,58 +426,26 @@ def main():
                     logger.error(f"Unexpected error in get(timeout=0): {e}")
                     still_running.append(h)
 
-            # log finished handles
             for h, res in done:
                 logger.info(f"Batch {res['batch_index']} finished, s3_key={res['s3_key']}")
 
             handles = still_running
-
             if len(done) == 0:
                 time.sleep(0.3)
 
-        # spawn a new worker
         h = batch_worker.spawn(batch, idx)
         handles.append(h)
-        logger.info(f"Launched batch {idx} ({len(batch)} subjects))")
+        logger.info(f"Launched batch {idx} ({len(batch)} subjects)")
 
-    # ---------------------------
-    # Wait for remaining workers
-    # ---------------------------
+    # wait for remaining workers
     for h in handles:
         res = h.get()
         logger.info(f"Batch {res['batch_index']} finished, s3_key={res['s3_key']}")
 
-    # ---------------------------
-    # Aggregate batch files safely
-    # ---------------------------
-    local_files = []
-    arrays = []
-    for idx in range(len(batches)):
-        key = f"{S3_BATCH_PREFIX}batch_{idx}.npy"
-        local_path = os.path.join(TEMP_DIR, f"agg_batch_{idx}.npy")
-        try:
-            s3.download_file(BUCKET_NAME, key, local_path)
-            arrays.append(np.load(local_path))
-            local_files.append(local_path)
-        except s3.exceptions.NoSuchKey:
-            logger.info(f"Batch {idx} not found in S3, skipping.")
-
-    if arrays:
-        final_arr = np.vstack(arrays)
-    else:
-        # fallback: create empty array if no batches exist
-        vector_dim = 100  # replace with the actual dimension per patient if known
-        final_arr = np.zeros((0, vector_dim), dtype=np.float32)
-
-    # save final numpy array and upload
-    final_local = os.path.join(TEMP_DIR, FINAL_S3_KEY)
-    np.save(final_local, final_arr)
-    s3.upload_file(final_local, BUCKET_NAME, FINAL_S3_KEY)
-    logger.info(f"Uploaded final vectors to s3://{BUCKET_NAME}/{FINAL_S3_KEY}")
-
     cur.close()
     conn.close()
     logger.info("Processing complete.")
+
 
 
 if __name__ == "__main__":
