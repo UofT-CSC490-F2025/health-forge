@@ -1,5 +1,5 @@
 project_name = "health-forge-ehr-diff"
-region = "ca-central-1" 
+region = "us-east-2" 
 
 ## Change instance types amd volume size for SageMaker if desired
 training_instance_type = "ml.g5.xlarge"

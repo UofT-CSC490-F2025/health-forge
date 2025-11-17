@@ -112,7 +112,7 @@ resource "aws_dms_replication_instance" "ri" {
   replication_instance_class = "dms.t3.small"
   allocated_storage          = 50
   vpc_security_group_ids     = [aws_security_group.dms_sg.id]
-  depends_on                 = [aws_iam_role_policy_attachment.dms-vpc-role-AmazonDMSVPCManagementRole, aws_iam_role_policy.dms_s3_read]
+  depends_on                 = [aws_iam_role_policy_attachment.dms-vpc-role-AmazonDMSVPCManagementRole, aws_iam_role_policy.dms_s3_read, aws_iam_role.dms-vpc-role, aws_iam_role_policy_attachment.dms-vpc-role-AmazonDMSVPCManagementRole, aws_iam_service_linked_role.dms_slr]
   publicly_accessible        = true
 }
 
