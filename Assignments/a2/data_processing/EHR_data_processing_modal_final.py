@@ -383,7 +383,7 @@ def main():
     password = "mimicpassword"
 
     # batch to resume from
-    START_BATCH = 303  # change this to whatever batch you want to start from
+    START_BATCH = 378  # change this to whatever batch you want to start from
 
     conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password, sslmode="require")
     cur = conn.cursor()
