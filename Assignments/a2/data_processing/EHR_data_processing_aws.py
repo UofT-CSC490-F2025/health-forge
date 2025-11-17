@@ -1,100 +1,38 @@
 import sqlite3
 import numpy as np
 import os
-from pathlib import Path
 import re
-from sklearn.preprocessing import MinMaxScaler
-import joblib
+import boto3
+import tempfile
 
+# ---------------------------
+# AWS S3 CONFIG
+# ---------------------------
+BUCKET_NAME = "health-forge-ehr-diff-training-data-136268833180"
+S3_PREFIX = "mimic_iv"
+INPUT_DB_FILENAME = "MIMIC_IV.sqlite"
+OUTPUT_DB_PATH = "/tmp/vector_store.sqlite"
 
-db_path = Path(__file__).parent.parent / "MIMIC_IV.sqlite"
-output_db_path = Path(__file__).parent.parent / "vector_store.sqlite"
+s3_client = boto3.client("s3")
+# If you want to keep S3 client for future use, you can still initialize it
+import boto3
+s3_client = boto3.client("s3")
 
+# ---------------------------
+# SETUP VECTOR STORE
+# ---------------------------
 def set_up_vector_store():
-
-    if os.path.exists(output_db_path):
-        os.remove(output_db_path)
-
-    conn = sqlite3.connect(output_db_path)
+    if os.path.exists(OUTPUT_DB_PATH):
+        os.remove(OUTPUT_DB_PATH)
+    conn = sqlite3.connect(OUTPUT_DB_PATH)
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS vectors(subject_id INTEGER PRIMARY KEY, vec BLOB);")
     conn.commit()
+    conn.close()
 
-
-
-
-# ---------------------------------------------------------------------------
-# TABLE FEATURE EXTRACTION FUNCTIONS
-# ---------------------------------------------------------------------------
-def merge_database(db_input_path: Path) -> None:
-
-    set_up_vector_store() # sets up the output database vector store
-    
-    input_conn = sqlite3.connect(db_input_path)
-    input_conn.row_factory = sqlite3.Row   # enables name-based access
-    output_conn = sqlite3.connect(output_db_path)
-    input_cur = input_conn.cursor()
-    input_cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    output_cur = output_conn.cursor()
-
-
-    enums = get_enums(input_conn)
-
-    for patient in input_cur.execute("SELECT DISTINCT * FROM patients;"):
-        subject_id = patient["subject_id"]
-        subject_id_array = np.array([subject_id])
-        gender = np.array([0 if patient["gender"] == 'M' else 1])
-        age = np.array([patient["anchor_age"]])
-
-        dod = np.array([1 if patient["dod"] else 0])
-
-        gsn_vector = get_prescriptions(input_conn, subject_id, enums["prescriptions"])
-        icd_codes_vector = get_diagnoses_icd(input_conn, subject_id, enums['diagnoses_icd'])
-        proc_vector = get_procedures_icd(input_conn, subject_id, enums["procedures_icd"]["icd_codes"])
-        poe_vector = get_poe(input_conn, subject_id, enums["poe"])
-        svc_vector = get_services(input_conn, subject_id, enums["services"])
-
-        total_admissions, admission_type_vector, admission_location_vector, discharge_location_vector = get_admissions(
-            input_conn, subject_id, enums["admissions"]
-        )
-
-        admission_vector = np.concatenate(
-            ([total_admissions], admission_type_vector, admission_location_vector, discharge_location_vector)
-        )
-
-        result_mapping, vector_length = get_omr_result_names(input_conn)
-        hcpcs_map = get_all_hcpcs_codes(input_conn)
-        medication_map = get_all_drugs(input_conn)
-        omr_vector = get_omr(input_conn, subject_id, result_mapping, vector_length)
-        hcpcs_vector = get_hcpcsevents(input_conn, subject_id,hcpcs_map)
-        pharm_vector = get_pharmacy(input_conn, subject_id, medication_map)
-
-        final = np.concatenate((subject_id_array, 
-                                gender, 
-                                age, 
-                                dod, 
-                                gsn_vector, 
-                                icd_codes_vector, 
-                                proc_vector, 
-                                poe_vector, 
-                                svc_vector, 
-                                admission_vector, 
-                                omr_vector, 
-                                hcpcs_vector, 
-                                pharm_vector))
-        
-        vector_blob = final.astype("float32").tobytes()
-
-        output_cur.execute("INSERT INTO vectors (subject_id, vec) VALUES (?, ?);", (subject_id, vector_blob))
-
-
-    output_conn.commit()
-    output_conn.close()
-        
-
-
-
-
+# ---------------------------
+# HELPER FUNCTIONS
+# ---------------------------
 def get_enums(db_conn: sqlite3.Connection) -> dict:
     cur = db_conn.cursor()
     enums = {
@@ -400,48 +338,88 @@ def get_admissions(db_conn: sqlite3.Connection, subject_id: int, admission_maps:
 
     cur.close()
     return total_admissions, admission_type_vector, admission_location_vector, discharge_location_vector
-    
+# ---------------------------
+# MERGE DATABASE FUNCTION
+# ---------------------------
+def merge_database(db_input_path: str):
+    set_up_vector_store()
 
-# This function extracts all patient vectors from the SQLite store, applies log+MinMax normalization,
-# and saves both the normalized .npy and the fitted scaler.
-def export_normalized_numpy(sqlite_path: Path, output_path: Path, scaler_path: Path, vector_length: int):
-    """
-    Extracts all patient vectors from the SQLite store, applies log+MinMax normalization,
-    and saves both the normalized .npy and the fitted scaler.
-    """
-    print("🔹 Loading vectors from SQLite...")
-    conn = sqlite3.connect(sqlite_path)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM vectors;")
-    n_rows = cur.fetchone()[0]
+    input_conn = sqlite3.connect(db_input_path)
+    input_conn.row_factory = sqlite3.Row
+    output_conn = sqlite3.connect(OUTPUT_DB_PATH)
+    input_cur = input_conn.cursor()
+    output_cur = output_conn.cursor()
 
-    all_vectors = np.zeros((n_rows, vector_length), dtype=np.float32)
-    cur.execute("SELECT vec FROM vectors ORDER BY subject_id;")
-    for i, (vec_blob,) in enumerate(cur.fetchall()):
-        all_vectors[i, :] = np.frombuffer(vec_blob, dtype=np.float32)
-    conn.close()
-    print(f"Loaded {n_rows} vectors of length {vector_length}")
+    enums = get_enums(input_conn)
 
-    # ---- Normalization ----
-    print("🔹 Applying log1p + MinMax scaling...")
-    X_log = np.log1p(all_vectors)  # stabilize large counts
+    for patient in input_cur.execute("SELECT * FROM patients;"):
+        subject_id = patient["subject_id"]
+        subject_id_array = np.array([subject_id])
+        gender = np.array([0 if patient["gender"] == 'M' else 1])
+        age = np.array([patient["anchor_age"]])
+        dod = np.array([1 if patient["dod"] else 0])
 
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    X_norm = scaler.fit_transform(X_log)
+        gsn_vector = get_prescriptions(input_conn, subject_id, enums["prescriptions"])
+        icd_codes_vector = get_diagnoses_icd(input_conn, subject_id, enums['diagnoses_icd'])
+        proc_vector = get_procedures_icd(input_conn, subject_id, enums["procedures_icd"]["icd_codes"])
+        poe_vector = get_poe(input_conn, subject_id, enums["poe"])
+        svc_vector = get_services(input_conn, subject_id, enums["services"])
 
-    np.save(output_path, X_norm)
-    joblib.dump(scaler, scaler_path)
-    print(f"✅ Saved normalized data to {output_path}")
-    print(f"✅ Saved fitted scaler to {scaler_path}")
-    print("Min/Max example:", scaler.data_min_[:5], scaler.data_max_[:5])
+        total_admissions, admission_type_vector, admission_location_vector, discharge_location_vector = get_admissions(
+            input_conn, subject_id, enums["admissions"]
+        )
 
+        admission_vector = np.concatenate(
+            ([total_admissions], admission_type_vector, admission_location_vector, discharge_location_vector)
+        )
 
+        result_mapping, vector_length = get_omr_result_names(input_conn)
+        hcpcs_map = get_all_hcpcs_codes(input_conn)
+        medication_map = get_all_drugs(input_conn)
+        omr_vector = get_omr(input_conn, subject_id, result_mapping, vector_length)
+        hcpcs_vector = get_hcpcsevents(input_conn, subject_id, hcpcs_map)
+        pharm_vector = get_pharmacy(input_conn, subject_id, medication_map)
+
+        final = np.concatenate((
+            subject_id_array,
+            gender,
+            age,
+            dod,
+            gsn_vector,
+            icd_codes_vector,
+            proc_vector,
+            poe_vector,
+            svc_vector,
+            admission_vector,
+            omr_vector,
+            hcpcs_vector,
+            pharm_vector
+        ))
+
+        vector_blob = final.astype("float32").tobytes()
+        output_cur.execute("INSERT INTO vectors (subject_id, vec) VALUES (?, ?);", (subject_id, vector_blob))
+
+    output_conn.commit()
+    output_conn.close()
+    input_conn.close()
+
+    print(f"Finished creating vector store: {OUTPUT_DB_PATH}")
+
+# ---------------------------
+# MAIN
+# ---------------------------
 if __name__ == "__main__":
-    merge_database(db_path)
+    # Create a temporary file to hold the SQLite DB from S3
+    with tempfile.NamedTemporaryFile() as tmp_db_file:
+        # Download the S3 DB into the temp file
+        s3_client.download_file(
+            BUCKET_NAME,
+            f"{S3_PREFIX}/{INPUT_DB_FILENAME}",
+            tmp_db_file.name
+        )
+        print(f"Downloaded {INPUT_DB_FILENAME} from S3 to temporary path {tmp_db_file.name}")
 
-    vector_length = 3333
-    sqlite_path = output_db_path
-    output_path = Path(__file__).parent.parent / "ehr_norm.npy"
-    scaler_path = Path(__file__).parent.parent / "ehr_scaler.joblib"
+        # Call your merge_database function with the temp file path
+        merge_database(tmp_db_file.name)
 
-    export_normalized_numpy(sqlite_path, output_path, scaler_path, vector_length)
+    print(f"Finished creating vector store: {OUTPUT_DB_PATH}")
