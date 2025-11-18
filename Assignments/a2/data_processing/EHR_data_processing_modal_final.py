@@ -7,6 +7,8 @@ import logging
 from typing import List
 import numpy as np
 import torch
+import re
+import csv
 
 # ---------------------------
 # CONFIG
@@ -16,8 +18,9 @@ S3_BATCH_PREFIX = "vector_batches/"
 FINAL_S3_KEY = "patient_vectors.npy"
 TEMP_DIR = "/tmp"
 
-BATCH_SIZE = 256    # patients per GPU task
-NUM_WORKERS = 1     # concurrent GPU workers
+BATCH_SIZE = 512    # patients per GPU task
+NUM_WORKERS = 8     # concurrent GPU workers
+
 
 # ---------------------------
 # Modal App
@@ -27,17 +30,65 @@ app = modal.App("gpu-ehr-processing")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("rds-parallel")
 
+
+# ---------------------------
+# Helper functions for GEM loading & ICD normalization
+# ---------------------------
+def load_gem_from_s3(bucket, key):
+    """Load GEM mapping file directly from S3."""
+    s3 = boto3.client("s3")
+    obj = s3.get_object(Bucket=bucket, Key=key)
+    text = obj["Body"].read().decode("utf-8", errors="ignore")
+
+    mapping = {}
+    reg = re.compile(r'(\S+)\s+(\S+)\s+(\S+)')
+
+    for line in text.splitlines():
+        m = reg.search(line.strip())
+        if not m:
+            continue
+        src, tgt, flag = m.groups()
+        src_n = src.upper().replace(".", "").replace(" ", "")
+        tgt_n = tgt.upper().replace(".", "").replace(" ", "")
+        mapping.setdefault(src_n, set()).add(tgt_n)
+
+    return {k: list(v) for k, v in mapping.items()}
+
+
+
+def normalize_code_strip(code: str):
+    """Return uppercased code with dot/spaces removed (safe for lookup)."""
+    if code is None:
+        return None
+    return str(code).upper().replace('.', '').replace(' ', '')
+
+
+def collapse_to_icd10_3(code_no_dot: str):
+    """
+    Given an ICD10 code without dot (e.g., 'E1165' or 'E11'), return the 3-character category:
+      - take first 3 characters (letter + 2 digits), i.e. 'E11'
+    If code_no_dot is shorter than 3, return it as-is.
+    """
+    if code_no_dot is None:
+        return None
+    s = str(code_no_dot)
+    if len(s) <= 3:
+        return s
+    return s[:3]
+
+
 # ---------------------------
 # GPU batch worker
 # ---------------------------
 @gpu_batch_worker := app.function(
-    gpu="A100",
+    gpu="H100",
+    timeout=5 * 60 * 60,
     image=modal.Image.debian_slim().pip_install([
         "boto3", "numpy", "torch", "psycopg2-binary"
     ]),
     secrets=[
-        modal.Secret.from_name("aws-secret"),       # AWS access key + secret
-        modal.Secret.from_name("postgres-secret")   # RDS credentials
+        modal.Secret.from_name("aws-secret"),
+        modal.Secret.from_name("postgres-secret")
     ],
 )
 def batch_worker(subject_ids: List[int], batch_index: int):
@@ -45,12 +96,22 @@ def batch_worker(subject_ids: List[int], batch_index: int):
     import torch
     import numpy as np
     import boto3
+    import logging
+
+    # Load GEMs from S3
+    I9_KEY = "2018_I9gem.txt"      # update to your actual key
+    I10_KEY = "2018_I10gem.txt"   # update to your actual key
+
+    gem_i9_to_i10 = load_gem_from_s3(BUCKET_NAME, I9_KEY)
+    gem_i10_to_i9 = load_gem_from_s3(BUCKET_NAME, I10_KEY)
+
+
     print("Worker running on device:", torch.cuda.get_device_name(0))
     logger = logging.getLogger(f"batch-{batch_index}")
     logger.setLevel(logging.INFO)
 
     # -------------------------
-    # RDS creds
+    # RDS creds (keep your originals)
     # -------------------------
     host = "terraform-20251109014506835900000003.cjac4g4syo66.us-east-2.rds.amazonaws.com"
     port = 5432
@@ -64,6 +125,7 @@ def batch_worker(subject_ids: List[int], batch_index: int):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Worker {batch_index} running on {device}, processing {len(subject_ids)} patients")
+
 
     # -------------------------
     # Fetch all patient info in batch
@@ -95,23 +157,76 @@ def batch_worker(subject_ids: List[int], batch_index: int):
     """, (subject_ids,))
     total_admissions_map = {r[0]: r[1] for r in cur.fetchall()}
 
-    # Diagnoses
+    # -------------------------
+    # Diagnoses: fetch icd_code + icd_version
+    # and convert ICD-9 -> ICD-10, collapse to 3-char ICD-10 categories
+    # -------------------------
     cur.execute(f"""
-        SELECT subject_id, icd_code
+        SELECT subject_id, icd_code, icd_version
         FROM diagnoses_icd
         WHERE subject_id = ANY(%s)
     """, (subject_ids,))
-    diagnoses_map = {}
-    for sid, icd in cur.fetchall():
-        diagnoses_map.setdefault(sid, []).append(icd)
+
+    diagnoses_map = {}  # subject_id -> set of collapsed 3-digit ICD10 codes
+    for sid, icd_raw, icd_version in cur.fetchall():
+        if icd_raw is None:
+            continue
+        # Normalize (strip spaces)
+        code_stripped = str(icd_raw).strip()
+        # Handle ICD-9 input: convert to ICD-10 via GEMs (include all)
+        if icd_version == 9 or str(icd_version) == '9':
+            key = normalize_code_strip(code_stripped)  # ICD9 key without dots
+            mapped = gem_i9_to_i10.get(key, [])
+            # for each mapped ICD10 target, collapse to 3-digit
+            for tgt in mapped:
+                collapsed = collapse_to_icd10_3(tgt)  # tgt is already no-dot in loader
+                if collapsed:
+                    diagnoses_map.setdefault(sid, set()).add(collapsed)
+            # if there were no GEM mappings, we skip (you could alternatively log)
+        else:
+            # icd_version == 10 -> normalize and collapse
+            tgt = normalize_code_strip(code_stripped)  # removes dot
+            collapsed = collapse_to_icd10_3(tgt)
+            if collapsed:
+                diagnoses_map.setdefault(sid, set()).add(collapsed)
+
+    # convert sets to lists for stable iteration
+    for k in list(diagnoses_map.keys()):
+        diagnoses_map[k] = list(diagnoses_map[k])
 
     # -------------------------
     # Build enums
     # -------------------------
-    cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd WHERE icd_code IS NOT NULL;")
-    icd_codes = sorted([r[0] for r in cur.fetchall()])
-    icd_map = {v: i for i, v in enumerate(icd_codes)}
+    # We must build icd_map (columns) from all DISTINCT collapsed 3-digit ICD10 categories across the ENTIRE DB,
+    # not just the current batch, to ensure column indices are consistent between batches.
+    # So query full table of distinct icd_code + icd_version and convert them the same way.
+    cur.execute("SELECT DISTINCT icd_code, icd_version FROM diagnoses_icd WHERE icd_code IS NOT NULL;")
+    all_codes = cur.fetchall()
 
+    collapsed_set = set()
+    for icd_raw, icd_version in all_codes:
+        if icd_raw is None:
+            continue
+        s = str(icd_raw).strip()
+        if icd_version == 9 or str(icd_version) == '9':
+            key = normalize_code_strip(s)
+            mapped = gem_i9_to_i10.get(key, [])
+            for tgt in mapped:
+                collapsed_set.add(collapse_to_icd10_3(tgt))
+        else:
+            tgt = normalize_code_strip(s)
+            collapsed_set.add(collapse_to_icd10_3(tgt))
+
+    # Remove None if any slipped in
+    collapsed_set.discard(None)
+    # Sort for deterministic ordering
+    collapsed_icd10_3_list = sorted([c for c in collapsed_set if c is not None])
+
+    icd_map = {v: i for i, v in enumerate(collapsed_icd10_3_list)}
+
+    # -------------------------
+    # Other enums unchanged
+    # -------------------------
     cur.execute("SELECT DISTINCT marital_status FROM admissions;")
     marital_statuses = sorted([r[0] if r[0] else "N/A" for r in cur.fetchall()])
     marital_map = {v: i for i, v in enumerate(marital_statuses)}
@@ -142,6 +257,7 @@ def batch_worker(subject_ids: List[int], batch_index: int):
                                        marital_vec, race_vec])
 
         diagnoses_vec = torch.zeros(len(icd_map), dtype=torch.float32)
+        # Now diagnoses_map contains collapsed ICD-10 3-digit codes (strings)
         for code in diagnoses_map.get(sid, []):
             if code in icd_map:
                 diagnoses_vec[icd_map[code]] = 1.0
@@ -170,7 +286,9 @@ def batch_worker(subject_ids: List[int], batch_index: int):
 # ---------------------------
 # Orchestrator
 # ---------------------------
-@app.function(image=modal.Image.debian_slim().pip_install(["psycopg2-binary", "boto3", "numpy", "torch"]))
+@app.function(
+        timeout=5 * 60 * 60,
+        image=modal.Image.debian_slim().pip_install(["psycopg2-binary", "boto3", "numpy", "torch"]))
 def process_ehr_data():
     import psycopg2
     import boto3
@@ -219,7 +337,6 @@ def process_ehr_data():
         res = h.wait()  # now this works
         logger.info(f"Batch {res['batch_index']} finished, s3_key={res['s3_key']}")
 
-
     # Aggregate final arrays
     s3 = boto3.client("s3")
     arrays = []
@@ -265,89 +382,71 @@ def main():
     user = "healthforgedb"
     password = "mimicpassword"
 
+    # batch to resume from
+    START_BATCH = 378  # change this to whatever batch you want to start from
+
     conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password, sslmode="require")
     cur = conn.cursor()
 
     # fetch all patient IDs
     cur.execute("SELECT DISTINCT subject_id FROM patients ORDER BY subject_id;")
     subject_rows = cur.fetchall()
+    cur.close()
+    conn.close()
     subject_ids = [r[0] for r in subject_rows]
     total = len(subject_ids)
     if total == 0:
         logger.warning("No patients found.")
         return
 
-    batch_size = 256  # or tune
-    NUM_WORKERS = 4   # max number of parallel GPU workers
+    batch_size = 512
+    NUM_WORKERS = 8
     batches = [subject_ids[i:i+batch_size] for i in range(0, total, batch_size)]
     logger.info(f"Total patients={total}, batch_size={batch_size}, num_batches={len(batches)}")
 
     # ---------------------------
-    # Launch workers in parallel using submit()
+    # Launch workers from START_BATCH
     # ---------------------------
     handles = []
-    s3 = boto3.client("s3")
+    for idx in range(START_BATCH, len(batches)):
+        batch = batches[idx]
 
-    for idx, batch in enumerate(batches):
-        # throttle parallel workers
+        # throttle workers
         while len(handles) >= NUM_WORKERS:
-            # wait for at least one to finish
-            done_handles = [h for h in handles if h.done()]
-            for dh in done_handles:
-                res = dh.result()
-                logger.info(f"Batch {res['batch_index']} finished, s3_key={res['s3_key']}")
-                handles.remove(dh)
-            time.sleep(0.5)
+            done = []
+            still_running = []
 
-        # submit a new worker
-        h = batch_worker.submit(batch, idx)
+            for h in handles:
+                try:
+                    res = h.get(timeout=0)
+                    done.append((h, res))
+                except TimeoutError:
+                    still_running.append(h)
+                except Exception as e:
+                    logger.error(f"Unexpected error in get(timeout=0): {e}")
+                    still_running.append(h)
+
+            for h, res in done:
+                logger.info(f"Batch {res['batch_index']} finished, s3_key={res['s3_key']}")
+
+            handles = still_running
+            if len(done) == 0:
+                time.sleep(0.3)
+
+        h = batch_worker.spawn(batch, idx)
         handles.append(h)
         logger.info(f"Launched batch {idx} ({len(batch)} subjects)")
 
     # wait for remaining workers
     for h in handles:
-        res = h.result()
+        res = h.get()
         logger.info(f"Batch {res['batch_index']} finished, s3_key={res['s3_key']}")
-
-    # ---------------------------
-    # Aggregate batch files
-    # ---------------------------
-    s3 = boto3.client("s3")
-    local_files = []
-    for idx in range(len(batches)):
-        key = f"{S3_BATCH_PREFIX}batch_{idx}.npy"
-        local_path = os.path.join(TEMP_DIR, f"agg_batch_{idx}.npy")
-        logger.info(f"Downloading s3://{BUCKET_NAME}/{key} -> {local_path}")
-        s3.download_file(BUCKET_NAME, key, local_path)
-        local_files.append(local_path)
-
-    # load and concatenate arrays
-    arrays = [np.load(p) for p in local_files]
-
-    if arrays:
-        final_arr = np.vstack(arrays)  # stack vertically to get full patient x vector_dim array
-    else:
-        # fallback: create an empty array with the expected vector dimension
-        # You can compute the vector dimension from your enums if needed
-        arrays = [np.load(p) for p in local_files]
-            
-        if arrays:
-            final_arr = np.vstack(arrays)
-        else:
-            # fallback: assume a default vector_dim if no batches (rare)
-            vector_dim = 100  # replace with the dimension you expect per patient
-            final_arr = np.zeros((0, vector_dim), dtype=np.float32)
-        final_arr = np.zeros((0, vector_dim), dtype=np.float32)
-
-    # save final numpy array and upload
-    final_local = os.path.join(TEMP_DIR, "patient_vectors.npy")
-    np.save(final_local, final_arr)
-    s3.upload_file(final_local, BUCKET_NAME, FINAL_S3_KEY)
-    logger.info(f"Uploaded final vectors to s3://{BUCKET_NAME}/{FINAL_S3_KEY}")
 
     cur.close()
     conn.close()
     logger.info("Processing complete.")
+
+
 
 if __name__ == "__main__":
     with app.run():

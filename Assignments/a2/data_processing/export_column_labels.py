@@ -1,196 +1,223 @@
-import sqlite3
-import numpy as np
+import modal
+import boto3
+import psycopg2
+import re
+import logging
+import os
+import csv
+import io
 import pandas as pd
-from pathlib import Path
+
+# ---------------------------
+# CONFIG
+# ---------------------------
+BUCKET_NAME = "healthforge-final-bucket"
+FINAL_S3_KEY = "patient_vector_columns.csv"
+TEMP_PATH = "/tmp/columns.csv"
+
+DXCCSR_CSV_KEY = "DXCCSR-Reference.csv"
 
 
-# === Paths ===
-db_path = Path(__file__).parent.parent / "MIMIC_IV_demo.sqlite"
-output_csv_path = Path(__file__).parent.parent / "vector_columns.csv"
-output_npy_path = Path(__file__).parent.parent / "vector_columns.npy"
+# Create Modal app
+app = modal.App("gpu-ehr-processing")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("column-export")
 
 
-# === Helper Functions ===
-def get_enums(db_conn: sqlite3.Connection) -> dict:
-    cur = db_conn.cursor()
-    enums = {
-        "prescriptions": {},
-        "diagnoses_icd": {},
-        "poe": {},
-        "procedures_icd": {},
-        "services": {},
-        "admissions": {}
-    }
+# ---------------------------
+# Helper functions
+# ---------------------------
+def load_gem_from_s3(bucket, key):
+    s3 = boto3.client("s3")
+    obj = s3.get_object(Bucket=bucket, Key=key)
+    text = obj["Body"].read().decode("utf-8", errors="ignore")
 
-    # Prescriptions
-    cur.execute("SELECT DISTINCT gsn FROM prescriptions;")
-    gsn_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
-    enums["prescriptions"]["gsn"] = {v: i for i, v in enumerate(gsn_codes)}
+    mapping = {}
+    reg = re.compile(r'(\S+)\s+(\S+)\s+(\S+)')
 
-    # Diagnoses ICD
-    cur.execute("SELECT DISTINCT icd_code FROM diagnoses_icd;")
-    icd_codes = [row[0] for row in cur.fetchall() if row[0] is not None]
-    enums["diagnoses_icd"]["icd_codes"] = {v: i for i, v in enumerate(icd_codes)}
+    for line in text.splitlines():
+        m = reg.search(line.strip())
+        if not m:
+            continue
+        src, tgt, flag = m.groups()
+        src_n = src.upper().replace(".", "").replace(" ", "")
+        tgt_n = tgt.upper().replace(".", "").replace(" ", "")
+        mapping.setdefault(src_n, set()).add(tgt_n)
 
-    # POE
-    cur.execute("SELECT DISTINCT order_type FROM poe;")
-    order_types = [row[0] for row in cur.fetchall() if row[0] is not None]
-    enums["poe"]["order_type"] = {v: i for i, v in enumerate(order_types)}
-
-    # Procedures ICD
-    cur.execute("SELECT DISTINCT icd_code, icd_version FROM procedures_icd;")
-    proc_codes = cur.fetchall()
-    proc_norm = [
-        f"{version}_{(code.replace('.', ''))}"
-        for code, version in proc_codes if code is not None
-    ]
-    enums["procedures_icd"]["icd_codes"] = {v: i for i, v in enumerate(proc_norm)}
-
-    # Services
-    cur.execute("SELECT DISTINCT curr_service FROM services;")
-    services = [row[0] for row in cur.fetchall() if row[0] is not None]
-    enums["services"]["curr_service"] = {v: i for i, v in enumerate(services)}
-
-    # Admissions
-    admission_types = [
-    'AMBULATORY OBSERVATION', 'DIRECT EMER.', 'DIRECT OBSERVATION',
-    'ELECTIVE', 'EU OBSERVATION', 'EW EMER.',
-    'OBSERVATION ADMIT', 'SURGICAL SAME DAY ADMISSION', 'URGENT'
-    ]
-    admission_type_map = {t: i for i, t in enumerate(admission_types)}
+    return {k: list(v) for k, v in mapping.items()}
 
 
-    cur.execute("SELECT DISTINCT admission_location FROM admissions;")
-    admission_locations = [row[0] for row in cur.fetchall()]
-    admission_location_map = {loc: i for i, loc in enumerate(admission_locations)}
-
-    cur.execute("SELECT DISTINCT discharge_location FROM admissions;")
-    discharge_locations = [row[0] for row in cur.fetchall()]
-    discharge_location_map = {loc: i for i, loc in enumerate(discharge_locations)}
-
-    enums["admissions"]["admission_type"] = admission_type_map
-    enums["admissions"]["admission_location"] = admission_location_map
-    enums["admissions"]["discharge_location"] = discharge_location_map
-
-    cur.close()
-    return enums
+def normalize_code_strip(code: str):
+    if code is None:
+        return None
+    return str(code).upper().replace(".", "").replace(" ", "")
 
 
-def get_omr_result_names(db_conn: sqlite3.Connection):
-    cur = db_conn.cursor()
+def collapse_to_icd10_3(code_no_dot: str):
+    if code_no_dot is None:
+        return None
+    s = str(code_no_dot)
+    return s[:3] if len(s) >= 3 else None
 
-    cur.execute("SELECT DISTINCT result_name FROM omr ORDER BY result_name;")
+def sanitize_description(desc: str):
+    """Convert human text into a safe column name."""
+    desc = desc.lower()
+    desc = re.sub(r"[^a-z0-9]+", "_", desc)
+    desc = re.sub(r"_+", "_", desc)
+    return desc.strip("_")
 
-    all_result_names = cur.fetchall()
-    all_result_names = [result[0] for result in all_result_names]
-    result_names_index_mapping = {}
 
-    cur_index = 0
-    for result in all_result_names:
-        
-        if 'Blood Pressure' in result:
-            result_names_index_mapping[result] = (cur_index, cur_index + 1)
-            cur_index += 2
+def load_dxccsr_mapping():
+    """Loads DXCCSR reference CSV from S3 and returns mapping:
+       3-digit ICD → CCSR Category Description"""
+    logger.info("Loading DXCCSR CSV file from S3...")
+
+    s3 = boto3.client("s3")
+    obj = s3.get_object(Bucket=BUCKET_NAME, Key=DXCCSR_CSV_KEY)
+    data = obj["Body"].read().decode("utf-8")
+
+    df = pd.read_csv(io.StringIO(data))
+
+    # Normalize column names
+    df.columns = [c.strip() for c in df.columns]
+
+    # REQUIRED columns (you confirmed these exist in your CSV)
+    required_cols = ["ICD-10-CM Code", "CCSR Category Description"]
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"DXCCSR CSV missing required column: {col}")
+
+    mapping = {}
+
+    for full_icd, desc in zip(df["ICD-10-CM Code"], df["CCSR Category Description"]):
+        icd_clean = normalize_code_strip(full_icd)
+        prefix = collapse_to_icd10_3(icd_clean)
+
+        if prefix and prefix not in mapping:
+            mapping[prefix] = str(desc)
+
+    logger.info(f"DXCCSR mapping loaded: {len(mapping)} prefixes mapped.")
+    return mapping
+
+
+
+
+# ---------------------------
+# Modal function
+# ---------------------------
+@app.function(
+    timeout=60 * 60,
+    image=modal.Image.debian_slim().pip_install(
+        ["boto3", "psycopg2-binary", "pandas"]
+    ),
+    secrets=[modal.Secret.from_name("aws-secret"),
+             modal.Secret.from_name("postgres-secret")]
+)
+def export_column_labels():
+
+    logger.info("Connecting to Postgres...")
+
+    host = "terraform-20251109014506835900000003.cjac4g4syo66.us-east-2.rds.amazonaws.com"
+    port = 5432
+    dbname = "raw_training_data"
+    user = "healthforgedb"
+    password = "mimicpassword"
+
+    conn = psycopg2.connect(
+        host=host, port=port, dbname=dbname,
+        user=user, password=password, sslmode="require"
+    )
+    cur = conn.cursor()
+
+    # ---------------------------
+    # Load DXCCSR (Option A)
+    # ---------------------------
+    dxccsr_map = load_dxccsr_mapping()
+
+    # ---------------------------
+    # Basic fixed columns
+    # ---------------------------
+    columns = ["gender", "age", "dod"]
+
+    # ---------------------------
+    # Admissions columns
+    # ---------------------------
+    cur.execute("SELECT DISTINCT marital_status FROM admissions;")
+    marital_statuses = sorted([r[0] if r[0] else "N/A" for r in cur.fetchall()])
+
+    cur.execute("SELECT DISTINCT race FROM admissions;")
+    races = sorted([r[0] if r[0] else "N/A" for r in cur.fetchall()])
+
+    columns.append("total_admissions")
+    columns += [f"marital_{sanitize_description(m)}" for m in marital_statuses]
+    columns += [f"race_{sanitize_description(r)}" for r in races]
+
+    # ---------------------------
+    # Diagnoses columns: keep ICD prefix + description
+    # ---------------------------
+    I9_KEY = "2018_I9gem.txt"
+    gem_i9_to_i10 = load_gem_from_s3(BUCKET_NAME, I9_KEY)
+
+    cur.execute("SELECT DISTINCT icd_code, icd_version FROM diagnoses_icd WHERE icd_code IS NOT NULL;")
+    all_codes = cur.fetchall()
+
+    collapsed_set = set()
+    for icd_raw, icd_version in all_codes:
+        s = str(icd_raw).strip()
+        if icd_version == 9 or str(icd_version) == '9':
+            key = normalize_code_strip(s)
+            mapped = gem_i9_to_i10.get(key, [])
+            for tgt in mapped:
+                pref = collapse_to_icd10_3(tgt)
+                if pref:
+                    collapsed_set.add(pref)
         else:
-            result_names_index_mapping[result] = (cur_index,)
-            cur_index += 1
+            pref = collapse_to_icd10_3(normalize_code_strip(s))
+            if pref:
+                collapsed_set.add(pref)
 
-    return result_names_index_mapping, cur_index + 1
+    collapsed_set.discard(None)
 
-
-def get_all_hcpcs_codes(db_conn: sqlite3.Connection):
-    cur = db_conn.cursor()
-    cur.execute("SELECT DISTINCT hcpcs_cd FROM hcpcsevents ORDER BY hcpcs_cd;")
-    all_hcpcs_codes = [result[0] for result in cur.fetchall()]
-    cur.close()
-    return {code: i for i, code in enumerate(all_hcpcs_codes)}
-
-
-def get_all_drugs(db_conn: sqlite3.Connection):
-    cur = db_conn.cursor()
-    cur.execute("SELECT DISTINCT medication FROM pharmacy ORDER BY medication")
-    all_meds = [row[0] for row in cur.fetchall()]
-    cur.close()
-    return {med: i for i, med in enumerate(all_meds)}
-
-
-# === Build Column Names ===
-def build_column_names(db_conn):
-    enums = get_enums(db_conn)
-    omr_map, _ = get_omr_result_names(db_conn)
-    hcpcs_map = get_all_hcpcs_codes(db_conn)
-    med_map = get_all_drugs(db_conn)
-
-    sections = {}
-
-    # Basic patient info
-    sections["patients"] = ["subject_id", "patients.gender", "patients.age", "patients.dod"]
-
-    # Prescriptions
-    sections["prescriptions"] = [f"prescriptions.gsn.{gsn}" for gsn in enums["prescriptions"]["gsn"]]
-
-    # Diagnoses
-    sections["diagnoses_icd"] = [f"diagnoses_icd.icd_code.{icd}" for icd in enums["diagnoses_icd"]["icd_codes"]]
-
-    # Procedures
-    sections["procedures_icd"] = [f"procedures_icd.icd_code.{code}" for code in enums["procedures_icd"]["icd_codes"]]
-
-    # POE
-    sections["poe"] = [f"poe.order_type.{ot}" for ot in enums["poe"]["order_type"]]
-
-    # Services
-    sections["services"] = [f"services.curr_service.{svc}" for svc in enums["services"]["curr_service"]]
-
-    # Admissions
-    adm_cols = ["admissions.total_admissions"]
-    adm_cols += [f"admissions.admission_type.{t}" for t in enums["admissions"]["admission_type"]]
-    adm_cols += [f"admissions.admission_location.{loc}" for loc in enums["admissions"]["admission_location"]]
-    adm_cols += [f"admissions.discharge_location.{dloc}" for dloc in enums["admissions"]["discharge_location"]]
-    sections["admissions"] = adm_cols
-
-    # OMR
-    omr_cols = []
-    for name in omr_map:
-        if 'Blood Pressure' in name:
-            omr_cols.append(f"omr.{name}.systolic")
-            omr_cols.append(f"omr.{name}.diastolic")
+    # For each 3-digit ICD prefix, produce a column named:
+    # <PREFIX>_<sanitized-description>  (e.g. "A01_acute_myocardial_infarction")
+    for prefix in sorted(collapsed_set):
+        if prefix in dxccsr_map:
+            desc = dxccsr_map[prefix]
+            clean_desc = sanitize_description(desc)
+            columns.append(f"{prefix}_{clean_desc}")
         else:
-            omr_cols.append(f"omr.{name}")
-    sections["omr"] = omr_cols
-
-    # HCPCS
-    sections["hcpcsevents"] = [f"hcpcsevents.hcpcs_cd.{code}" for code in hcpcs_map]
-
-    # Pharmacy
-    sections["pharmacy"] = [f"pharmacy.medication.{med}" for med in med_map]
-
-    # Flatten all
-    all_cols = []
-    for sec in sections:
-        all_cols += sections[sec]
-
-    return all_cols, sections
+            # fallback if no description found in DXCCSR
+            columns.append(f"{prefix}_unknown")
 
 
-# === Main ===
-if __name__ == "__main__":
-    conn = sqlite3.connect(db_path)
-    col_names, sections = build_column_names(conn)
+    # ---------------------------
+    # Save to CSV
+    # ---------------------------
+    os.makedirs(os.path.dirname(TEMP_PATH), exist_ok=True)
+
+    with open(TEMP_PATH, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)
+
+    s3 = boto3.client("s3")
+    s3.upload_file(TEMP_PATH, BUCKET_NAME, FINAL_S3_KEY)
+    logger.info(f"Uploaded column labels to s3://{BUCKET_NAME}/{FINAL_S3_KEY}")
+
+    cur.close()
     conn.close()
+    return {"s3_key": FINAL_S3_KEY, "num_columns": len(columns)}
 
-    # Save to CSV (header only)
-    pd.DataFrame(columns=col_names).to_csv(output_csv_path, index=False)
 
-    # Save to NPY
-    np.save(output_npy_path, np.array(col_names))
+# ---------------------------
+# Local run
+# ---------------------------
+def main():
+    with app.run():
+        handle = export_column_labels.spawn()
+        result = handle.get()
+        print(result)
 
-    # Print summary
-    print(f"\n✅ Column headers saved to:")
-    print(f"   CSV: {output_csv_path}")
-    print(f"   NPY: {output_npy_path}")
-    print(f"\n📊 Summary of column counts:")
-    total = 0
-    for k, v in sections.items():
-        print(f"  {k:<18} {len(v):>6}")
-        total += len(v)
-    print(f"  {'TOTAL':<18} {total:>6}\n")
+
+if __name__ == "__main__":
+    main()
