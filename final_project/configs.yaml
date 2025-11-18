@@ -1,0 +1,23 @@
+model:
+  input_dim: 256
+  hidden_dim: 512
+  time_emb_dim: 128
+  num_layers: 6
+  num_heads: 8
+  dropout: 0.1
+  use_attention: True
+
+data_utils:
+  test_split: 0.2
+  T: 1000
+  schedule: 'linear'
+  batch_size: 32
+  num_workers: 4
+  batch_size: 8
+
+trainer:
+  lr: 0.0001
+  num_epochs: 100
+  save_path: best_diffusion_model.pt
+
+
