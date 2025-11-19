@@ -138,7 +138,7 @@ def export_column_labels():
     # ---------------------------
     # Basic fixed columns
     # ---------------------------
-    columns = ["gender", "age", "dod"]
+    columns = ["isMale", "age", "isDead"]
 
     # ---------------------------
     # Admissions columns
@@ -149,9 +149,14 @@ def export_column_labels():
     cur.execute("SELECT DISTINCT race FROM admissions;")
     races = sorted([r[0] if r[0] else "N/A" for r in cur.fetchall()])
 
-    columns.append("total_admissions")
-    columns += [f"marital_{sanitize_description(m)}" for m in marital_statuses]
-    columns += [f"race_{sanitize_description(r)}" for r in races]
+    # rename total admissions
+    columns.append("total admission number")
+
+    # marital: remove prefix, keep underscores
+    columns += [sanitize_description(m) for m in marital_statuses]
+
+    # race: remove prefix, keep underscores
+    columns += [sanitize_description(r) for r in races]
 
     # ---------------------------
     # Diagnoses columns: keep ICD prefix + description
@@ -184,11 +189,11 @@ def export_column_labels():
     for prefix in sorted(collapsed_set):
         if prefix in dxccsr_map:
             desc = dxccsr_map[prefix]
-            clean_desc = sanitize_description(desc)
-            columns.append(f"{prefix}_{clean_desc}")
+            clean_desc = sanitize_description(desc).replace("_", " ")
+            columns.append(clean_desc)
         else:
-            # fallback if no description found in DXCCSR
-            columns.append(f"{prefix}_unknown")
+            columns.append("unknown")
+
 
 
     # ---------------------------
