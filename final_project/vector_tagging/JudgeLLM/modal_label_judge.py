@@ -346,7 +346,6 @@ LABEL YOU ARE EVALUATING:
             "misleading_avg": misleading_avg,
         }
 
-
     # ==================================================================
     # ★ NORMAL MODE: Evaluate full S3 dataset
     # ==================================================================
@@ -369,49 +368,136 @@ LABEL YOU ARE EVALUATING:
     with open("/tmp/labels.json", "wb") as f:
         s3.download_fileobj(BUCKET, LABELS_KEY, f)
     label_dict = json.load(open("/tmp/labels.json"))
-    
+
+    # -------------------------------
+    # Format full vector for prompting
+    # -------------------------------
     def format_vector_full(vec):
         txt = ""
 
-        # Gender is ALWAYS included, even if 0
+        # Always include gender
         gender_value = int(vec[0])
         gender_str = "male" if gender_value == 1 else "female"
         txt += f"- gender: {gender_str}\n"
 
-        # All other values skip zeros
+        # Skip zeros for all others
         for i, v in enumerate(vec[1:], start=1):
             if float(v) != 0:
-                txt += f"- {vector_defs[i]}: {float(v)}\n"
+                txt += f"- {vector_definitions[i]}: {float(v)}\n"
 
         return txt.strip()
 
-
+    # -------------------------------
+    # STORAGE FOR RESULTS
+    # -------------------------------
     results = {}
+    json_failures = 0
+    score_sums = np.zeros(5)      # 5 categories
+    score_counts = 0
 
+    ground_truth_entries = []     # For mean ≥ 4.0
+
+    # We use the same extractor as before
+    def extract_scores(obj):
+        try:
+            s = obj["scores"]
+            return [
+                s.get("clinical_correctness", 0),
+                s.get("completeness_of_key_patient_information", 0),
+                s.get("precision_of_patient_information", 0),
+                s.get("conciseness", 0),
+                s.get("formatting", 0),
+            ]
+        except:
+            return None
+
+    # -------------------------------
+    # MAIN EVALUATION LOOP
+    # -------------------------------
     for i in range(len(vectors)):
         vec = vectors[i]
         label = label_dict.get(str(i), "(missing)")
-        vtxt = format_vector_full(vec)
-        prompt = build_prompt(vtxt, label)
+        formatted = format_vector_full(vec)
+
+        prompt = build_prompt(formatted, label)
 
         print(f"--- Evaluating vector {i} ---")
-        out = pipe(
+
+        raw = pipe(
             prompt,
             max_new_tokens=256,
             return_full_text=False,
             temperature=0.2
         )[0]["generated_text"]
 
-        results[i] = parse_json(out)
+        parsed = parse_json(raw)
+        results[i] = parsed
 
+        # Extract scores
+        sc = extract_scores(parsed)
+        if sc is None:
+            json_failures += 1
+            continue
+
+        sc = np.array(sc, dtype=float)
+        score_sums += sc
+        score_counts += 1
+
+        # Determine if this vector-label pair is ground truth quality
+        mean_score = sc.mean()
+        if mean_score >= 4.0:
+            ground_truth_entries.append({
+                "vector": vec.tolist(),
+                "label": label,
+                "scores": parsed["scores"] # might want to remove this if its just clutter
+            })
+
+    # -------------------------------
+    # Compute aggregate means
+    # -------------------------------
+    if score_counts > 0:
+        category_means = (score_sums / score_counts).round(3).tolist()
+    else:
+        category_means = None
+
+    # -------------------------------
+    # Save full judge_results.json
+    # -------------------------------
     out_path = "/tmp/judge_results.json"
     with open(out_path, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump({
+            "results": results,
+            "mean_scores": {
+                "clinical_correctness": category_means[0],
+                "completeness_of_key_patient_information": category_means[1],
+                "precision_of_patient_information": category_means[2],
+                "conciseness": category_means[3],
+                "formatting": category_means[4],
+            } if category_means else None,
+            "json_parse_failures": json_failures,
+            "passed_ground_truth_threshold": len(ground_truth_entries)
+        }, f, indent=2)
 
     s3.upload_file(out_path, BUCKET, "judge_results.json")
     print("=== Uploaded judge_results.json to S3 ===")
 
-    return {"status": "ok", "count": len(results)}
+    # -------------------------------
+    # Save ground truth vectors/labels
+    # -------------------------------
+    gt_path = "/tmp/ground_truth_labels.npy"
+    np.save(gt_path, ground_truth_entries)
+
+    s3.upload_file(gt_path, BUCKET, "ground_truth_labels.npy")
+    print("=== Uploaded ground_truth_labels.npy to S3 ===")
+
+    return {
+        "status": "ok",
+        "count": len(results),
+        "mean_scores": category_means,
+        "json_failures": json_failures,
+        "ground_truth_saved": len(ground_truth_entries)
+    }
+
 
 
 # ---------------------------------------------------------
