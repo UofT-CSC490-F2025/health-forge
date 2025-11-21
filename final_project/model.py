@@ -51,9 +51,10 @@ class DiffusionModel(Module):
         emb = torch.concat([torch.sin(emb), torch.cos(emb)], dim=-1)
         return emb
     
-    def forward(self, x, t):
+    def forward(self, x, t, text_embed):
         # x: [B, D] - batch of 1D vectors
         # t: [B] - timesteps
+        # text_embed: [B, T] - Batch of 1D vectors for text embeddings
         
         # Time embedding
         t_emb = self.timestep_embedding(t, self.time_emb_dim)  # [B, time_emb_dim]
@@ -64,6 +65,8 @@ class DiffusionModel(Module):
         
         # Process through blocks
         for block in self.blocks:
+            # TODO: CROSS ATTENTION WITH TEXT EMBEDDING
+            # Classifier free guidance
             h = block(h, t_emb)
         
         # Output

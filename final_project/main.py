@@ -4,10 +4,13 @@ from trainer import DiffusionTrainer
 from data_utils import prepare_diffusion_dataloaders
 import argparse
 import yaml
+import numpy as np
+import pickle
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--cfg_path")
+    parser.add_argument("--data_path")
     parser.add_argument("--mode", choices=["train", "sample", "eval"])
     args = parser.parse_args()
 
@@ -17,7 +20,15 @@ if __name__ == '__main__':
 
     # Your dataset
     # TODO: REPLACE WITH REAL DATA
-    data = torch.randn(1000, cfg["model"]["input_dim"])  # [B=1000, D=256]
+    if args.data_path is None:
+        data = torch.randn(1000, cfg["model"]["input_dim"])  # [B=1000, D=256]
+    else:
+        with open(args.data_path, "rb") as f:
+            data = pickle.load(f)
+        samples, descs, llm_descs, text_embeds = data["samples"], data["descs"], data["llm_decs"], data["text_embeds"]
+        assert samples.shape[0] == text_embeds.shape[0], "Different number of samples and text embedddings"
+
+        data = samples
     
     # Setup
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -25,8 +36,9 @@ if __name__ == '__main__':
     # Prepare dataloaders
     train_loader, test_loader, noise_schedule = prepare_diffusion_dataloaders(
         data,
+        text_embeds,
         cfg["data_utils"],
-        device
+        device,
     )
     
     # Create model (you need to implement this)

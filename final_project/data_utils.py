@@ -7,12 +7,13 @@ from tqdm import tqdm
 
 class DiffusionDataset(Dataset):
     """Dataset for diffusion model training"""
-    def __init__(self, data, alpha_bar):
+    def __init__(self, data, text_embeds, alpha_bar):
         """
         data: [N, D] tensor - clean data
         alpha_bar: [T] tensor - cumulative product of alphas
         """
         self.data = data
+        self.text_embeds = text_embeds
         self.alpha_bar = alpha_bar
         self.T = len(alpha_bar)
     
@@ -21,6 +22,7 @@ class DiffusionDataset(Dataset):
     
     def __getitem__(self, idx):
         x0 = self.data[idx]  # [D]
+        text_embed = self.text_embeds[idx]
         
         # Sample random timestep
         t = torch.randint(0, self.T, (1,)).item()
@@ -35,7 +37,7 @@ class DiffusionDataset(Dataset):
         
         x_t = sqrt_alpha_bar_t * x0 + sqrt_one_minus_alpha_bar_t * epsilon
         
-        return x_t, t, epsilon
+        return x_t, t, epsilon, text_embed
 
 
 def create_noise_schedule(T=1000, schedule='linear', device='cpu'):
@@ -67,7 +69,7 @@ def create_noise_schedule(T=1000, schedule='linear', device='cpu'):
     return beta, alpha, alpha_bar
 
 
-def prepare_diffusion_dataloaders(data, cfg, device):
+def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     """
     Prepare train and test dataloaders for diffusion model
     
@@ -94,7 +96,10 @@ def prepare_diffusion_dataloaders(data, cfg, device):
     # Convert to tensor if needed
     if isinstance(data, np.ndarray):
         data = torch.from_numpy(data).float()
+    if isinstance(text_embeds, np.ndarray):
+        text_embeds = torch.from_numpy(text_embeds).float()
     data = data.to(device)
+    text_embeds = text_embeds.to(device)
     
     # Create noise schedule
     beta, alpha, alpha_bar = create_noise_schedule(T, schedule, device)
@@ -104,19 +109,25 @@ def prepare_diffusion_dataloaders(data, cfg, device):
     test_size = int(dataset_size * test_split)
     train_size = dataset_size - test_size
     
-    train_data, test_data = random_split(
-        data, 
-        [train_size, test_size],
-        generator=torch.Generator().manual_seed(42)
-    )
+    # train_data, test_data = random_split(
+    #     data, 
+    #     [train_size, test_size],
+    #     generator=torch.Generator().manual_seed(42)
+    # )
+    indices = torch.randperm(dataset_size)
+    train_indices, test_indices = indices[:train_size], indices[train_size:]
+    train_data, test_data = data[train_indices], data[test_indices]
+    train_embeds, test_embeds = text_embeds[train_indices], text_embeds[test_indices]
     
     # Create datasets
     train_dataset = DiffusionDataset(
-        data[train_data.indices], 
+        train_data,
+        train_embeds,
         alpha_bar
     )
     test_dataset = DiffusionDataset(
-        data[test_data.indices], 
+        test_data,
+        test_embeds,
         alpha_bar
     )
     

@@ -37,7 +37,7 @@ class DiffusionTrainer:
         self.model.train()
         total_loss = 0
         
-        for x_t, t, epsilon_true in tqdm(self.train_loader, desc='Training'):
+        for x_t, t, epsilon_true, text_embed in tqdm(self.train_loader, desc='Training'):
             x_t = x_t.to(self.device)
             t = t.to(self.device)
             epsilon_true = epsilon_true.to(self.device)
@@ -45,7 +45,7 @@ class DiffusionTrainer:
             self.optimizer.zero_grad()
             
             # Forward pass
-            epsilon_pred = self.model(x_t, t)
+            epsilon_pred = self.model(x_t, t, text_embed)
             
             # Loss
             loss = self.criterion(epsilon_pred, epsilon_true)
@@ -66,13 +66,13 @@ class DiffusionTrainer:
         total_loss = 0
         
         with torch.no_grad():
-            for x_t, t, epsilon_true in tqdm(self.test_loader, desc='Validation'):
+            for x_t, t, epsilon_true, text_embed in tqdm(self.test_loader, desc='Validation'):
                 x_t = x_t.to(self.device)
                 t = t.to(self.device)
                 epsilon_true = epsilon_true.to(self.device)
                 
                 # Forward pass
-                epsilon_pred = self.model(x_t, t)
+                epsilon_pred = self.model(x_t, t, text_embed)
                 
                 # Loss
                 loss = self.criterion(epsilon_pred, epsilon_true)

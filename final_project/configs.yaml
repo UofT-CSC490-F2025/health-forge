@@ -1,5 +1,5 @@
 model:
-  input_dim: 256
+  input_dim: 8
   hidden_dim: 512
   time_emb_dim: 128
   num_layers: 6
@@ -19,5 +19,3 @@ trainer:
   lr: 0.0001
   num_epochs: 100
   save_path: best_diffusion_model.pt
-
-
