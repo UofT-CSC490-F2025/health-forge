@@ -88,8 +88,22 @@ class BioMistralVectorTagger:
 
         return emb.detach().cpu().numpy()
     
+    def format_vector_full(self, vec):
+        txt = ""
+        gender_value = int(vec[0])
+        gender_str = "male" if gender_value == 1 else "female"
+        txt += f"- gender: {gender_str}\n"
 
+        for i, v in enumerate(vec[1:], start=1):
+            if float(v) != 0:
+                if float(v) == 1.0:
+                    txt += f"- {self.vector_definitions[i]}\n"
+                else:
+                    txt += f"- {self.vector_definitions[i]}: {float(v)}\n"
 
+        return txt.strip()
+
+    
     def tag_vectors(self, vector_batch: np.ndarray) -> List[List]:
         """
         vector_batch: shape (batch_size, n_features)
@@ -100,28 +114,32 @@ class BioMistralVectorTagger:
         messages = []
         for vector in vector_batch:
             # Only look at non-zero entries
-
-            lines = []
-            for i in range(0, len(vector)):
-                if self.vector_definitions[i] == 'isMale' or vector[i] > 0:
-                    lines.append(f"{self.vector_definitions[i]}: {vector[i]}")
-        
-            vector_mapping = "\n".join(lines)
+            vector_mapping = self.format_vector_full(vector)
             
             messages = [
                 {
                     "role": "user",
-                    "content": f"""Your task is to provide a very short description of a vector representing a patient's electronic health record.
-                    The vector has {len(vector)} features. It consists of:
-                    - patient demographic information
-                    - total number of hospital admissions
-                    - a multi-hot encoding of truncated ICD-10 codes the patient has been diagnosed with.
+                    "content": f"""
+You are a clinical summarization assistant.
 
-                    Below are all non-zero feature names and their values.
-                    Please describe the patient in a concise clinical summary.
+You will be given a sparse vector representing one patient's electronic health record.
+The vector has {len(vector)} features and consists of:
+- patient demographic information
+- total number of hospital admissions
+- a multi-hot encoding of truncated ICD-10 codes.
 
-                    {vector_mapping}
-                    """
+Below are all NON-ZERO feature names and their values.
+
+TASK:
+- Write EXACTLY ONE sentence in natural language.
+- Summarize the patient clinically (age, sex if present, major diagnoses, key comorbidities).
+- Do NOT output raw feature names or numeric values like "1.0".
+- Do NOT output code-like fragments (e.g. "something disease: 1.0").
+- Do NOT output only numbers; always write a full sentence.
+
+NON-ZERO FEATURES:
+{vector_mapping}
+            """
                 }
             ]
 
@@ -140,7 +158,7 @@ class BioMistralVectorTagger:
             prompts,
             padding=True,
             truncation=True,
-            max_length=512,          # adjust if needed
+            max_length=8192,          # adjust if needed
             return_tensors="pt",
         )
 
@@ -152,8 +170,8 @@ class BioMistralVectorTagger:
         with torch.no_grad():
             output_ids = self.model.generate(
                 **enc,
-                max_new_tokens=64,
-                do_sample=False,           # deterministic; set True if you want sampling
+                max_new_tokens=128,
+                do_sample=True,         
                 num_beams=1,
                 pad_token_id=self.llm_tokenizer.eos_token_id,
             )
@@ -173,8 +191,13 @@ class BioMistralVectorTagger:
         # Clean up whitespace
         texts = [t.strip() for t in texts]
 
-        return [[vector_batch[i], texts[i]] for i in range(0, len(texts))]
+        for i in range(0, len(texts)):
+            print(f"PROMPT: {prompts[i]}")
+            print(f"RESPONSE: {texts[i]}")
 
+        return [[vector_batch[i], texts[i]] for i in range(0, len(texts))]
+    
+    
 
 
         
