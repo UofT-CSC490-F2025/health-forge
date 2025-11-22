@@ -15,9 +15,10 @@ from transformers import (
 # CONFIG
 # -----------------------------------------------------
 BUCKET = "healthforge-final-bucket"
-VECTORS_KEY = "merged_patient_vectors.npy"
+VECTORS_KEY = "original_vectors.npy"
 DEF_CSV_KEY = "patient_vector_columns.csv"
-LABELS_KEY = "generated_labels.json"
+LABELS_KEY = "vector_tags.npy"
+LIMIT = 100
 
 MODEL_ID = "Qwen/Qwen2.5-14B-Instruct"
 
@@ -353,51 +354,49 @@ LABEL YOU ARE EVALUATING:
 
     s3 = boto3.client("s3")
 
-    # Load vectors
+    # -------------------------------
+    # Load vectors (NumPy)
+    # -------------------------------
     with open("/tmp/vectors.npy", "wb") as f:
-        s3.download_fileobj(BUCKET, VECTORS_KEY, f)
+        s3.download_fileobj(BUCKET, "original_vectors.npy", f)
     vectors = np.load("/tmp/vectors.npy")
 
-    # Load definitions
+    # -------------------------------
+    # Load vector definitions
+    # -------------------------------
     with open("/tmp/defs.csv", "wb") as f:
         s3.download_fileobj(BUCKET, DEF_CSV_KEY, f)
     df = pd.read_csv("/tmp/defs.csv")
     vector_definitions = df.columns.values
 
-    # Load labels
-    with open("/tmp/labels.json", "wb") as f:
-        s3.download_fileobj(BUCKET, LABELS_KEY, f)
-    label_dict = json.load(open("/tmp/labels.json"))
+    # -------------------------------
+    # Load labels (NumPy)
+    # -------------------------------
+    with open("/tmp/labels.npy", "wb") as f:
+        s3.download_fileobj(BUCKET, "vector_tags.npy", f)
+    labels = np.load("/tmp/labels.npy", allow_pickle=True)
 
     # -------------------------------
-    # Format full vector for prompting
+    # Format vector for prompting
     # -------------------------------
     def format_vector_full(vec):
         txt = ""
-
-        # Always include gender
         gender_value = int(vec[0])
         gender_str = "male" if gender_value == 1 else "female"
         txt += f"- gender: {gender_str}\n"
 
-        # Skip zeros for all others
         for i, v in enumerate(vec[1:], start=1):
             if float(v) != 0:
                 txt += f"- {vector_definitions[i]}: {float(v)}\n"
 
         return txt.strip()
 
-    # -------------------------------
-    # STORAGE FOR RESULTS
-    # -------------------------------
     results = {}
     json_failures = 0
-    score_sums = np.zeros(5)      # 5 categories
+    score_sums = np.zeros(5)
     score_counts = 0
+    ground_truth_entries = []
 
-    ground_truth_entries = []     # For mean ≥ 4.0
-
-    # We use the same extractor as before
     def extract_scores(obj):
         try:
             s = obj["scores"]
@@ -412,13 +411,13 @@ LABEL YOU ARE EVALUATING:
             return None
 
     # -------------------------------
-    # MAIN EVALUATION LOOP
+    # Main Evaluation Loop
     # -------------------------------
-    for i in range(len(vectors)):
+    for i in range(min(LIMIT, len(vectors))):
         vec = vectors[i]
-        label = label_dict.get(str(i), "(missing)")
-        formatted = format_vector_full(vec)
+        label = labels[i]   # original string label from vector_tags.npy
 
+        formatted = format_vector_full(vec)
         prompt = build_prompt(formatted, label)
 
         print(f"--- Evaluating vector {i} ---")
@@ -431,38 +430,40 @@ LABEL YOU ARE EVALUATING:
         )[0]["generated_text"]
 
         parsed = parse_json(raw)
+
+        # ★ ADD LABEL DIRECTLY INTO OUTPUT JSON ★
+        parsed["label"] = label
+
         results[i] = parsed
 
-        # Extract scores
         sc = extract_scores(parsed)
         if sc is None:
             json_failures += 1
             continue
 
-        sc = np.array(sc, dtype=float)
+        sc = np.array(sc)
         score_sums += sc
         score_counts += 1
 
-        # Determine if this vector-label pair is ground truth quality
         mean_score = sc.mean()
+
+        # ★ include label in ground truth entries ★
         if mean_score >= 4.0:
             ground_truth_entries.append({
                 "vector": vec.tolist(),
                 "label": label,
-                "scores": parsed["scores"] # might want to remove this if its just clutter
+                "scores": parsed["scores"],
+                "explanation": parsed.get("explanation", "")
             })
-
+            
     # -------------------------------
-    # Compute aggregate means
+    # Aggregate Scores
     # -------------------------------
     if score_counts > 0:
         category_means = (score_sums / score_counts).round(3).tolist()
     else:
         category_means = None
 
-    # -------------------------------
-    # Save full judge_results.json
-    # -------------------------------
     out_path = "/tmp/judge_results.json"
     with open(out_path, "w") as f:
         json.dump({
@@ -481,9 +482,6 @@ LABEL YOU ARE EVALUATING:
     s3.upload_file(out_path, BUCKET, "judge_results.json")
     print("=== Uploaded judge_results.json to S3 ===")
 
-    # -------------------------------
-    # Save ground truth vectors/labels
-    # -------------------------------
     gt_path = "/tmp/ground_truth_labels.npy"
     np.save(gt_path, ground_truth_entries)
 
@@ -506,4 +504,4 @@ LABEL YOU ARE EVALUATING:
 @app.local_entrypoint()
 def main():
     # first run in test mode
-    run_judge_on_s3.remote(test_mode=True)
+    run_judge_on_s3.remote(test_mode=False)
