@@ -89,17 +89,37 @@ class BioMistralVectorTagger:
         return emb.detach().cpu().numpy()
     
     def format_vector_full(self, vec):
-        txt = ""
+        txt = "Patient Facts: \n"
+
         gender_value = int(vec[0])
         gender_str = "male" if gender_value == 1 else "female"
         txt += f"- gender: {gender_str}\n"
 
-        for i, v in enumerate(vec[1:], start=1):
-            if float(v) != 0:
-                if float(v) == 1.0:
-                    txt += f"- {self.vector_definitions[i]}\n"
-                else:
-                    txt += f"- {self.vector_definitions[i]}: {float(v)}\n"
+        age_value = vec[1]
+        txt += f"- age: {age_value}\n"
+
+        alive_value = int(vec[2])
+        alive_str = "has deceased" if alive_value == 1 else "is alive"
+        txt += f"- {alive_str}\n"
+
+        txt += "- marital status: "
+        for i, v in enumerate(vec[4:9], start=4):
+            if float(v) == 1.0:
+                    txt += f"{self.vector_definitions[i]}"
+        txt += "\n"
+        txt += "- ethnicity(s): "
+        for i, v in enumerate(vec[9:42], start=9):
+            if float(v) == 1.0:
+                    txt += f"{self.vector_definitions[i]} "            
+        txt += "\n\n"
+
+        txt += "Patient Past Diagnoses: \n"
+        for i, v in enumerate(vec[42:], start=42):
+            if float(v) == 1.0:
+                txt += f"- {self.vector_definitions[i]}\n"
+
+        if (vec[42:] == 0.0).all():
+             txt += "- Patient has not been diagnosed with any conditions." 
 
         return txt.strip()
 
@@ -122,24 +142,30 @@ class BioMistralVectorTagger:
                     "content": f"""
 You are a clinical summarization assistant.
 
-You will be given a sparse vector representing one patient's electronic health record.
-The vector has {len(vector)} features and consists of:
-- patient demographic information
-- total number of hospital admissions
-- a multi-hot encoding of truncated ICD-10 codes.
+You will be given structured information about a single patient, including
+basic demographics and a list of past diagnoses.
 
-Below are all NON-ZERO feature names and their values.
+All of the information in the patient description is factual and should be
+treated as correct. Do not contradict it.
 
 TASK:
-- Write EXACTLY ONE sentence in natural language.
-- Summarize the patient clinically (age, sex if present, major diagnoses, key comorbidities).
-- Do NOT output raw feature names or numeric values like "1.0".
-- Do NOT output code-like fragments (e.g. "something disease: 1.0").
-- Do NOT output only numbers; always write a full sentence.
+- Write EXACTLY ONE concise clinical sentence.
+- Summarize the patient in natural language, focusing on:
+  - age and gender (if provided),
+  - major diagnoses,
+  - important comorbidities.
+- You may group related diagnoses into broader clinical concepts (e.g.
+  "chronic kidney disease" instead of listing every renal code).
+- Do NOT invent diagnoses that are not implied by the given information.
+- Do NOT mention raw lists, bullet points, or code-like text.
+- Do NOT explain your reasoning or add extra commentary.
+- Your output MUST be a single sentence ending with a period.
 
-NON-ZERO FEATURES:
+Here is the patient description:
+
 {vector_mapping}
-            """
+"""
+           
                 }
             ]
 

@@ -13,7 +13,7 @@ VECTOR_TAG_KEY = "vector_tags.npy"
 VECTOR_TAG_EMBEDDING_KEY = "vector_tag_embeddings.npy"
 TEMP_DIR = "/tmp"
 
-BATCH_SIZE = 512    # patients per GPU task
+BATCH_SIZE = 100   # patients per GPU task
 NUM_WORKERS = 8     # concurrent GPU workers
 
 INFERENCE_BATCH_SIZE = 16
