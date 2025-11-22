@@ -127,101 +127,139 @@ class BioMistralVectorTagger:
     def tag_vectors(self, vector_batch: np.ndarray) -> List[List]:
         """
         vector_batch: shape (batch_size, n_features)
-        returns: list of generated tag strings, length = batch_size
+        returns: list of [vector, summary] pairs, length = batch_size
         """
 
-        prompts: List[str] = []
-        messages = []
-        for vector in vector_batch:
-            # Only look at non-zero entries
+        # Will store summaries in order (some from templates, some from LLM)
+        summaries: List[str] = []
+
+        # Store prompts only for the samples that *require* LLM inference
+        llm_prompts: List[str] = []
+        llm_indices: List[int] = []   # map LLM outputs back to original patient index
+
+        # --- STEP 1: Create prompts OR handle "no diagnoses" directly ---
+        for idx, vector in enumerate(vector_batch):
+
+            # Build patient text block
             vector_mapping = self.format_vector_full(vector)
-            
+
+            # Detect zero diagnoses
+            has_no_dx = (vector[42:] == 0.0).all()
+
+            if has_no_dx:
+                # -----------------------------------------
+                # CASE A — Skip LLM entirely for this patient
+                # -----------------------------------------
+                age = int(vector[1])
+                gender_value = int(vector[0])
+                gender_str = "male" if gender_value == 1 else "female"
+
+                alive_value = int(vector[2])
+                alive_str = "has deceased" if alive_value == 1 else "is alive"
+        
+
+                marital_status = ""
+                for i, v in enumerate(vector[4:9], start=4):
+                    if float(v) == 1.0:
+                        marital_status += f"{self.vector_definitions[i]}"
+                
+                ethnic_group = ""
+                for i, v in enumerate(vector[9:42], start=9):
+                    if float(v) == 1.0:
+                        ethnic_group += f"{self.vector_definitions[i]}"            
+
+                # Deterministic summary
+                summary = (
+                    f"The patient is a {age}-year-old {ethnic_group} {gender_str} with no documented diagnoses. The patient {alive_str}."
+                )
+                summaries.append(summary)
+                continue
+
+            # -----------------------------------------
+            # CASE B — Build LLM prompt for this patient
+            # -----------------------------------------
             messages = [
                 {
                     "role": "user",
                     "content": f"""
-You are a clinical summarization assistant.
+    You are a clinical summarization assistant.
 
-You will be given structured information about a single patient, including
-basic demographics and a list of past diagnoses.
+    You will be given structured information about a single patient, including
+    basic demographics and a list of past diagnoses.
 
-All of the information in the patient description is factual and should be
-treated as correct. Do not contradict it.
+    All of the information in the patient description is factual and should be
+    treated as correct. Do not contradict it.
 
-TASK:
-- Write EXACTLY ONE concise clinical sentence.
-- Summarize the patient in natural language, focusing on:
-  - age and gender (if provided),
-  - major diagnoses,
-  - important comorbidities.
-- You may group related diagnoses into broader clinical concepts (e.g.
-  "chronic kidney disease" instead of listing every renal code).
-- Do NOT invent diagnoses that are not implied by the given information.
-- Do NOT mention raw lists, bullet points, or code-like text.
-- Do NOT explain your reasoning or add extra commentary.
-- Your output MUST be a single sentence ending with a period.
+    TASK:
+    - Write EXACTLY ONE concise clinical sentence.
+    - Summarize the patient in natural language, focusing on:
+    - age and gender (if provided),
+    - major diagnoses,
+    - important comorbidities.
+    - You may group related diagnoses into broader clinical concepts.
+    - Do NOT invent diagnoses that are not implied by the given information.
+    - Do NOT mention raw lists, bullet points, or code-like text.
+    - Do NOT explain your reasoning or add extra commentary.
+    - Your output MUST be a single sentence ending with a period.
 
-Here is the patient description:
+    Here is the patient description:
 
-{vector_mapping}
-"""
-           
+    {vector_mapping}
+    """
                 }
             ]
 
-            # Use the chat template to build the actual prompt string
+            # Build actual string prompt
             prompt = self.llm_tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
             )
-            prompts.append(prompt)
 
-        # -----------------------------
-        # Batched tokenization
-        # -----------------------------
+            llm_prompts.append(prompt)
+            llm_indices.append(idx)
+            summaries.append(None)  # placeholder
+
+        # --- EXIT EARLY IF NO LLM WORK NEEDED ---
+        if len(llm_prompts) == 0:
+            return [[vector_batch[i], summaries[i]] for i in range(len(summaries))]
+
+        # --- STEP 2: Batch tokenization for only LLM samples ---
         enc = self.llm_tokenizer(
-            prompts,
+            llm_prompts,
             padding=True,
             truncation=True,
-            max_length=8192,          # adjust if needed
+            max_length=4096,
             return_tensors="pt",
         )
-
         enc = {k: v.to(self.model.device) for k, v in enc.items()}
 
-        # -----------------------------
-        # Batched generation
-        # -----------------------------
+        # --- STEP 3: Batched generation ---
         with torch.no_grad():
             output_ids = self.model.generate(
                 **enc,
-                max_new_tokens=128,
-                do_sample=True,         
-                num_beams=1,
+                max_new_tokens=64,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
                 pad_token_id=self.llm_tokenizer.eos_token_id,
             )
 
-        # -----------------------------
-        # Strip the prompt, keep only generated text
-        # (equivalent to pipeline(..., return_full_text=False))
-        # -----------------------------
-        input_len = enc["input_ids"].shape[1]          # same for all due to padding
-        gen_only_ids = output_ids[:, input_len:]       # (batch, generated_len)
-
-        texts = self.llm_tokenizer.batch_decode(
-            gen_only_ids,
-            skip_special_tokens=True,
+        # Strip prompt from outputs
+        input_len = enc["input_ids"].shape[1]
+        gen_only = output_ids[:, input_len:]
+        decoded = self.llm_tokenizer.batch_decode(
+            gen_only, skip_special_tokens=True
         )
+        decoded = [t.strip() for t in decoded]
 
-        # Clean up whitespace
-        texts = [t.strip() for t in texts]
+        # --- STEP 4: Insert LLM outputs back into correct positions ---
+        for out_text, orig_idx in zip(decoded, llm_indices):
+            summaries[orig_idx] = out_text
 
-        for i in range(0, len(texts)):
-            print(f"PROMPT: {prompts[i]}")
-            print(f"RESPONSE: {texts[i]}")
+        # --- STEP 5: Return aligned results ---
+        return [[vector_batch[i], summaries[i]] for i in range(len(summaries))]
 
-        return [[vector_batch[i], texts[i]] for i in range(0, len(texts))]
     
     
 
