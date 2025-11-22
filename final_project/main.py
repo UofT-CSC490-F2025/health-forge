@@ -28,7 +28,8 @@ if __name__ == '__main__':
         samples, descs, llm_descs, text_embeds = data["samples"], data["descs"], data["llm_decs"], data["text_embeds"]
         assert samples.shape[0] == text_embeds.shape[0], "Different number of samples and text embedddings"
 
-        data = samples
+        data = (samples[0])[None,:] # TODO: Only one sample
+        data = (data * 2) -1
     
     # Setup
     device = 'cuda' if torch.cuda.is_available() else 'cpu'

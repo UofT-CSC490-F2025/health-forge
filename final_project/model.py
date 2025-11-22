@@ -2,8 +2,8 @@ import torch
 import torch.nn.functional as F
 from torch.nn.functional import softmax
 from torch.nn import Linear, Sequential, SiLU, LayerNorm, Dropout, Module
-import yaml
-import argparse
+
+import math 
 
 class DiffusionModel(Module):
     def __init__(self, cfg):     # Use transformer vs MLP
@@ -28,7 +28,7 @@ class DiffusionModel(Module):
         )
         
         # Main blocks
-        self.blocks = []
+        self.blocks = torch.nn.ModuleList()  # Use ModuleList instead of []
         for _ in range(num_layers):
             if use_attention:
                 self.blocks.append(TransformerBlock(hidden_dim, num_heads, dropout))
@@ -43,13 +43,13 @@ class DiffusionModel(Module):
     
     @staticmethod
     def timestep_embedding(t, dim):
-        # Sinusoidal positional encoding
         half_dim = dim // 2
-        emb = 10000 / (half_dim - 1)
-        emb = torch.exp(torch.arange(half_dim) * -emb)
-        emb = t[:, None] * emb[None, :]
-        emb = torch.concat([torch.sin(emb), torch.cos(emb)], dim=-1)
+        emb = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=t.device) * -emb)
+        emb = t[:, None].float() * emb[None, :]
+        emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
         return emb
+
     
     def forward(self, x, t, text_embed):
         # x: [B, D] - batch of 1D vectors

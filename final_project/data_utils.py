@@ -24,14 +24,14 @@ class DiffusionDataset(Dataset):
         x0 = self.data[idx]  # [D]
         text_embed = self.text_embeds[idx]
         
-        # Sample random timestep
-        t = torch.randint(0, self.T, (1,)).item()
+        # Sample random timestep (1 to T inclusive)
+        # T is the length of alpha_bar, so use self.T
+        t = torch.randint(1, self.T + 1, (1,)).item()
         
-        # Sample noise
+        # Sample noise (epsilon)
         epsilon = torch.randn_like(x0)  # [D]
         
-        # Add noise: x_t = sqrt(alpha_bar_t) * x0 + sqrt(1 - alpha_bar_t) * epsilon
-        alpha_bar_t = self.alpha_bar[t]
+        alpha_bar_t = self.alpha_bar[t - 1]
         sqrt_alpha_bar_t = torch.sqrt(alpha_bar_t)
         sqrt_one_minus_alpha_bar_t = torch.sqrt(1 - alpha_bar_t)
         
