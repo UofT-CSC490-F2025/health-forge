@@ -25,9 +25,9 @@ def sample(cfg):
     beta, alpha, alpha_bar = beta.to(device=device), alpha.to(device=device), alpha_bar.to(device=device)
 
     # Loop from T down to 1 (the final step)
-    for t in tqdm(range(T, 0, -1)): # CRITICAL CHANGE: Stop at 1
+    for t in tqdm(range(T, 0, -1)):
         
-        t_index = t - 1 # CRITICAL CHANGE: Use t-1 index for schedule tensors
+        t_index = t - 1
         
         # Get schedule values at timestep t (using t-1 index)
         alpha_t = alpha[t_index]
@@ -66,7 +66,7 @@ def sample(cfg):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cfg_path")
+    parser.add_argument("cfg_path")
     args = parser.parse_args()
 
     with open(args.cfg_path) as f:
