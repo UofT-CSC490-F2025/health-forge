@@ -88,7 +88,7 @@ class BioMistralVectorTagger:
 
         return emb.detach().cpu().numpy()
     
-    def format_vector_full(self, vec):
+    def format_vector_full(self, vec): # Testable
         txt = "Patient Facts: \n"
 
         gender_value = int(vec[0])
@@ -124,7 +124,7 @@ class BioMistralVectorTagger:
         return txt.strip()
 
     
-    def tag_vectors(self, vector_batch: np.ndarray) -> List[List]:
+    def tag_vectors(self, vector_batch: np.ndarray) -> List[List]: #Test shape
         """
         vector_batch: shape (batch_size, n_features)
         returns: list of [vector, summary] pairs, length = batch_size

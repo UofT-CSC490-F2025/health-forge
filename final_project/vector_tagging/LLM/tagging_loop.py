@@ -13,7 +13,7 @@ VECTOR_TAG_KEY = "vector_tags.npy"
 VECTOR_TAG_EMBEDDING_KEY = "vector_tag_embeddings.npy"
 TEMP_DIR = "/tmp"
 
-BATCH_SIZE = 100  # patients per GPU task
+BATCH_SIZE = 512  # patients per GPU task
 NUM_WORKERS = 8     # concurrent GPU workers
 
 INFERENCE_BATCH_SIZE = 16
@@ -42,7 +42,7 @@ llm = None
     ],
 )
 def batch_worker(vector_batch: np.ndarray, batch_index: int, definition_array: np.ndarray):
-    
+    print(f"Starting Batch: {batch_index}\n")
     global llm
     if llm is None:
         logger.info("LLM not defined for this container, initiating LLM cold start...")
@@ -57,7 +57,8 @@ def batch_worker(vector_batch: np.ndarray, batch_index: int, definition_array: n
         encodings = llm.encode_text([descriptions[i][1] for i in range(0, len(descriptions))])
 
         output.extend([[descriptions[i][0], descriptions[i][1], encodings[i]] for i in range(0, len(descriptions))])
- 
+    
+    print(f"Batch Complete: {batch_index}\n")
     return {"index": batch_index, "result": output }
 
 
@@ -95,7 +96,7 @@ def tag_ehr_vectors():
         reader = csv.reader(f)
         definition_vector = list(reader)[0]
 
-    batches = [all_training_vectors[i:i+BATCH_SIZE] for i in range(0, 1)]
+    batches = [all_training_vectors[i:i+BATCH_SIZE] for i in range(0, len(all_training_vectors), BATCH_SIZE)]
 
     calls = []
     results = []
