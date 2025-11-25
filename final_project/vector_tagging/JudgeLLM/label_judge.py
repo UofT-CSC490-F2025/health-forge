@@ -1,42 +1,49 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import numpy as np
 import json
 import re
 
-
 class EHRLabelJudge:
     """
-    Judge model for evaluating the quality of LLM-generated patient labels
-    using a rubric. It receives:
-        • vector_definitions  – array of feature names
-        • vector              – numeric feature vector
-        • label               – generated label string to evaluate
-
-    The judge returns:
-        • scores_list = [int, int, ...]
-        • explanation = "string"
+    Judge model for evaluating LLM-generated labels using a strict JSON rubric.
+    Designed to support very large medical LLMs such as Med42-70B.
     """
 
-    model = None
-    pipe = None
-    vector_definitions: np.ndarray = None
+    def __init__(self, vector_definitions: np.ndarray, model_id="m42-health/med42-70b"):
+        """
+        Initialize tokenizer, but delay model loading until load_model() is called.
+        This keeps the class usable locally without loading 70B params.
+        """
 
-    def __init__(self, vector_definitions: np.ndarray, model_id="Qwen/Qwen2.5-1.5B-Instruct"):
-        """
-        Initialize judge model & pipeline.
-        """
+        self.model_id = model_id
+        self.vector_definitions = vector_definitions
+
+        print("Initializing tokenizer only…")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "left"
+
+        self.model = None
+        self.pipe = None
+        print("Tokenizer loaded. Call load_model() inside a Modal GPU function.")
+
+
+    # ------------------------------------------------------------
+    # Load model inside Modal GPU container
+    # ------------------------------------------------------------
+    def load_model(self):
+        """Call inside a Modal GPU worker. Loads Med42-70B into memory."""
         import torch
 
         print("----------------------------------------------------")
-        print("Loading Judge Model")
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+        print(f"Loading LLM: {self.model_id}")
+        print("CUDA available:", torch.cuda.is_available())
+        if torch.cuda.is_available():
+            print("Device:", torch.cuda.get_device_name(0))
         print("----------------------------------------------------")
 
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
-
         self.model = AutoModelForCausalLM.from_pretrained(
-            model_id,
+            self.model_id,
             torch_dtype=torch.bfloat16,
             device_map="auto"
         )
@@ -44,162 +51,144 @@ class EHRLabelJudge:
         self.pipe = pipeline(
             "text-generation",
             model=self.model,
-            tokenizer=tokenizer
+            tokenizer=self.tokenizer,
+            temperature=0.1,
+            max_new_tokens=256,
         )
 
-        print("Judge model device:", next(self.model.parameters()).device)
-        print("----------------------------------------------------\n")
-
-        self.vector_definitions = vector_definitions
+        print("Model successfully loaded on device:", next(self.model.parameters()).device)
 
 
     # ------------------------------------------------------------
-    # Format EHR vector into human-readable text
+    # Format vector into readable text
     # ------------------------------------------------------------
     def _format_vector(self, vector: np.ndarray):
-        """
-        Produces a readable text block of only non-zero features.
-        """
         mapping = ""
         for i, value in enumerate(vector):
             if float(value) != 0.0:
                 mapping += f"- {self.vector_definitions[i]}: {float(value)}\n"
-        
-        return mapping if mapping else "(All values zero)"
+        return mapping or "(All zeros)"
 
 
     # ------------------------------------------------------------
-    # High-quality rubric for the judge to follow
+    # JSON Rubric Prompt
     # ------------------------------------------------------------
     def _build_prompt(self, vector_text: str, label: str):
+
         return f"""
 You are an expert clinical evaluator.
 
-You will rate the quality of a generated EHR label for a respective EHR vector based on the rubric below.
+You will evaluate how well a GENERATED LABEL represents the given EHR VECTOR.
 
-You MUST answer by filling in this exact template:
+Return ONLY valid JSON in this format:
 
-SCORES: [<int>, <int>, <int>, <int>, <int>]
-EXPLANATION: <your justification of high and low scores here>
+{{
+  "scores": {{
+      "clinical_correctness": 1-5,
+      "completeness": 1-5,
+      "conciseness": 1-5,
+      "medical_clarity": 1-5,
+      "formatting_quality": 1-5
+  }},
+  "explanation": "Short explanation of strengths and weaknesses."
+}}
 
-Where:
-- SCORES is a list of integer scores from 1 to 5
-- No JSON, no backticks, no extra text before or after the template
-- Do NOT repeat the instructions
-- Do NOT output anything except the template above
+Rules:
+- All values must be integers 1–5.
+- Output must be valid JSON with no text before or after.
 
-Rubric Categories:
-A) Clinical correctness: does the label reflect the EHR data?
-B) Completeness: does it mention necessary fields (age, gender, ICD clues)?
-C) Conciseness: is it short and correctly summarized?
-D) Medical clarity: medically valid, no hallucinations
-E) Formatting quality: grammar, clarity
-
---------------------------------------
-EHR VECTOR for reference:
+---------------------------------------------------------
+EHR VECTOR (non-zero features):
 {vector_text}
 
-GENERATED LABEL which you are judging:
-"{label}"
---------------------------------------
-
-Fill in the template now:
-
-        """
-
+GENERATED LABEL:
+\"\"\"{label}\"\"\"
+---------------------------------------------------------
+Return ONLY the JSON.
+"""
 
 
     # ------------------------------------------------------------
-    # Extract JSON safely
+    # JSON Parser
     # ------------------------------------------------------------
-    def _parse_judge_output(self, text):
-        scores_match = re.search(r"SCORES:\s*\[(.*?)\]", text)
-        if scores_match:
-            nums = scores_match.group(1)
-            scores = [int(x.strip()) for x in nums.split(",")]
-        else:
-            scores = [0,0,0,0,0]
+    def _parse_output(self, text: str):
 
-        explanation_match = re.search(r"EXPLANATION:\s*(.*)", text, re.DOTALL)
-        explanation = explanation_match.group(1).strip() if explanation_match else "No explanation."
+        try:
+            # Extract JSON substring
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if not match:
+                raise ValueError("No JSON found.")
 
-        return scores, explanation
+            json_text = match.group(0)
+            data = json.loads(json_text)
 
+            # Validate structure
+            scores_dict = data.get("scores", {})
+            explanation = data.get("explanation", "")
+
+            # Convert dict → ordered list for ML
+            order = [
+                "clinical_correctness",
+                "completeness",
+                "conciseness",
+                "medical_clarity",
+                "formatting_quality"
+            ]
+
+            scores_list = [int(scores_dict.get(k, 0)) for k in order]
+
+            return scores_list, explanation
+
+        except Exception as e:
+            print("JSON parse error:", e)
+            return [0, 0, 0, 0, 0], "Parse error."
 
 
     # ------------------------------------------------------------
-    # Public API
+    # Judge a single vector-label pair
     # ------------------------------------------------------------
     def judge(self, vector: np.ndarray, label: str):
-        """
-        Evaluate a generated label and return:
-            (scores_list, explanation)
-        """
+
         vector_text = self._format_vector(vector)
         prompt = self._build_prompt(vector_text, label)
 
-        out = self.pipe(
+        output = self.pipe(
             prompt,
             max_new_tokens=256,
-            return_full_text=False
+            return_full_text=False,
         )
 
-        raw_output = out[0]["generated_text"]
-        print("\n--- Raw Judge Output ---\n", raw_output)
+        raw = output[0]["generated_text"]
+        print("\n--- Raw Output ---\n", raw)
 
-        scores, explanation = self._parse_judge_output(raw_output)
-
-        print("\n--- Parsed Judge Result ---")
-        print("Scores:", scores)
-        print("Explanation:", explanation)
-
-        return scores, explanation
+        return self._parse_output(raw)
 
 
+    # ------------------------------------------------------------
+    # Batch Judging
+    # ------------------------------------------------------------
+    def judge_batch(self, vectors: list, labels: list):
+        """
+        vectors: list[np.ndarray]
+        labels:  list[str]
+        Returns list of (scores, explanation)
+        """
 
-# Demo usage
-if __name__ == "__main__":
-    vec_defs = np.array(["age", "gender", "ICD10:E11", "ICD10:I20"])
-    judge = EHRLabelJudge(vec_defs)
+        prompts = []
+        for v, lbl in zip(vectors, labels):
+            vec_text = self._format_vector(v)
+            prompts.append(self._build_prompt(vec_text, lbl))
 
-    # ------------------------------------------
-    # Case 1 — CORRECT LABEL
-    # ------------------------------------------
-    vector1 = np.array([69, 1, 1, 0])   # 69-year-old male with E11 (T2D)
-    label1 = "69-year-old male with type 2 diabetes."
+        # Batch generation
+        outputs = self.pipe(
+            prompts,
+            max_new_tokens=256,
+            return_full_text=False,
+        )
 
-    print("\n=========== CASE 1: CORRECT LABEL =============")
-    s1, e1 = judge.judge(vector1, label1)
-    print("Scores:", s1)
-    print("Explanation:", e1)
+        results = []
+        for out in outputs:
+            raw = out["generated_text"]
+            results.append(self._parse_output(raw))
 
-
-    # ------------------------------------------
-    # Case 2 — SLIGHTLY WRONG LABEL
-    # Missing ICD information, vague phrasing
-    # ------------------------------------------
-    vector2 = np.array([69, 1, 1, 0])
-    label2 = "An older male patient."
-
-    print("\n=========== CASE 2: SLIGHTLY WRONG LABEL =============")
-    s2, e2 = judge.judge(vector2, label2)
-    print("Scores:", s2)
-    print("Explanation:", e2)
-
-
-    # ------------------------------------------
-    # Case 3 — COMPLETELY WRONG LABEL
-    # Wrong age, wrong gender, wrong condition
-    # ------------------------------------------
-    vector3 = np.array([69, 1, 1, 0])
-    label3 = "A 25-year-old female with asthma."
-
-    print("\n=========== CASE 3: INCORRECT LABEL =============")
-    s3, e3 = judge.judge(vector3, label3)
-    print("Scores:", s3)
-    print("Explanation:", e3)
-
-    print("\n============= FINAL SUMMARY =============")
-    print("Correct label scores     :", s1)
-    print("Slightly wrong scores    :", s2)
-    print("Completely wrong scores  :", s3)
+        return results
