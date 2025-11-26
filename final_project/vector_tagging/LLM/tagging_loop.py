@@ -2,7 +2,9 @@ import csv
 import modal
 import logging
 import numpy as np
-from vector_tagger import BioMistralVectorTagger
+import boto3
+
+from final_project.vector_tagging.LLM.vector_tagger import BioMistralVectorTagger
 
 BUCKET_NAME = "healthforge-final-bucket"
 S3_BATCH_PREFIX = "vector_batches/"
