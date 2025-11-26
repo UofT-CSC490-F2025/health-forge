@@ -1,7 +1,7 @@
 model:
-  input_dim: 8
+  input_dim: 1806
   hidden_dim: 512
-  text_embed_dim: 384
+  text_embed_dim: 768
   num_layers: 6
   num_heads: 8
   dropout: 0.1
@@ -14,7 +14,7 @@ data_utils:
   lambda_max: 20
   embed_drop_prob: 0.1
   schedule: 'linear'
-  num_workers: 4
+  num_workers: 8
   batch_size: 8
 
 trainer:

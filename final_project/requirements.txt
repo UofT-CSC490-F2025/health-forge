@@ -1,0 +1,8 @@
+torch
+sentence-transformers
+awscli
+boto3
+numpy
+tqdm
+pyyaml
+modal
