@@ -8,12 +8,12 @@ import numpy as np
 import pickle
 
 
-def train(cfg, data):
+def train(cfg, data, text_embeds):
      # Setup
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Prepare dataloaders
-    train_loader, test_loader, noise_schedule = prepare_diffusion_dataloaders(
+    train_loader, test_loader = prepare_diffusion_dataloaders(
         data,
         text_embeds,
         cfg["data_utils"],
@@ -27,7 +27,6 @@ def train(cfg, data):
         model=model,
         train_loader=train_loader,
         test_loader=test_loader,
-        noise_schedule=noise_schedule,
         cfg=cfg["trainer"],
         device=device
     )
@@ -56,8 +55,10 @@ if __name__ == '__main__':
     samples, descs, llm_descs, text_embeds = data["samples"], data["descs"], data["llm_decs"], data["text_embeds"]
     assert samples.shape[0] == text_embeds.shape[0], "Different number of samples and text embedddings"
 
-    # data = (samples[0])[None,:] # TODO: Only one sample
+    num_samples = 10
+    data = (samples[:num_samples])
+    text_embeds = (text_embeds[:num_samples])
     data = (data * 2) -1
     
-    train(cfg, data)
+    train(cfg, data, text_embeds)
    

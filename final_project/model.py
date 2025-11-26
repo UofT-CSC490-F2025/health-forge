@@ -1,5 +1,5 @@
 import torch
-import torch.nn.functional as F
+from torch.nn.functional import scaled_dot_product_attention
 from torch.nn.functional import softmax
 from torch.nn import Linear, Sequential, SiLU, LayerNorm, Dropout, Module
 
@@ -10,7 +10,7 @@ class DiffusionModel(Module):
         super().__init__()
         input_dim = cfg["input_dim"]
         hidden_dim = cfg["hidden_dim"]
-        time_emb_dim = cfg["time_emb_dim"]
+        text_embed_dim = cfg["text_embed_dim"]
         num_layers = cfg["num_layers"]
         num_heads = cfg["num_heads"]
         dropout = cfg["dropout"]
@@ -19,13 +19,6 @@ class DiffusionModel(Module):
 
         # Input projection
         self.input_proj = Linear(input_dim, hidden_dim)
-        self.time_emb_dim = time_emb_dim
-        # Time embedding
-        self.time_embed = Sequential(
-            Linear(time_emb_dim, hidden_dim),
-            SiLU(),
-            Linear(hidden_dim, hidden_dim)
-        )
         
         # Main blocks
         self.blocks = torch.nn.ModuleList()  # Use ModuleList instead of []
@@ -33,7 +26,7 @@ class DiffusionModel(Module):
             if use_attention:
                 self.blocks.append(TransformerBlock(hidden_dim, num_heads, dropout))
             else:
-                self.blocks.append(MLPBlock(hidden_dim, hidden_dim, dropout))
+                self.blocks.append(MLPBlock(hidden_dim, text_embed_dim, dropout))
         
         # Output projection
         self.output = Sequential(
@@ -41,40 +34,25 @@ class DiffusionModel(Module):
             Linear(hidden_dim, input_dim)
         )
     
-    @staticmethod
-    def timestep_embedding(t, dim):
-        half_dim = dim // 2
-        emb = math.log(10000) / (half_dim - 1)
-        emb = torch.exp(torch.arange(half_dim, device=t.device) * -emb)
-        emb = t[:, None].float() * emb[None, :]
-        emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
-        return emb
-
     
-    def forward(self, x, t, text_embed):
+    def forward(self, x, text_embed):
         # x: [B, D] - batch of 1D vectors
-        # t: [B] - timesteps
         # text_embed: [B, T] - Batch of 1D vectors for text embeddings
-        
-        # Time embedding
-        t_emb = self.timestep_embedding(t, self.time_emb_dim)  # [B, time_emb_dim]
-        t_emb = self.time_embed(t_emb)  # [B, hidden_dim]
-        
+                
         # Project input
         h = self.input_proj(x)  # [B, hidden_dim]
         
         # Process through blocks
         for block in self.blocks:
             # TODO: CROSS ATTENTION WITH TEXT EMBEDDING
-            # Classifier free guidance
-            h = block(h, t_emb)
+            h = block(h, text_embed)
         
         # Output
         return self.output(h)  # [B, input_dim]
 
 
 class MLPBlock(Module):
-    def __init__(self, dim, time_emb_dim, dropout):
+    def __init__(self, dim, text_embed_dim, dropout):
         super().__init__()
         self.norm1 = LayerNorm(dim)
         self.mlp1 = Sequential(
@@ -83,11 +61,12 @@ class MLPBlock(Module):
             Dropout(dropout),
             Linear(4 * dim, dim)
         )
-        
-        self.time_proj = Sequential(
-            SiLU(),
-            Linear(time_emb_dim, dim)
-        )
+
+        self.q_proj = Linear(dim, dim)
+        self.k_proj = Linear(text_embed_dim, dim)
+        self.v_proj = Linear(text_embed_dim, dim)
+
+        self.attn_norm = LayerNorm(dim)
         
         self.norm2 = LayerNorm(dim)
         self.mlp2 = Sequential(
@@ -97,11 +76,19 @@ class MLPBlock(Module):
             Linear(4 * dim, dim)
         )
     
-    def forward(self, x, t_emb):
-        # First block with time injection
+    def forward(self, x, text_embed):
         h = self.norm1(x)
-        h = self.mlp1(h) + self.time_proj(t_emb)
-        x = x + h
+        h = self.mlp1(h)
+        x = x + h # residual connection
+
+        q = self.q_proj(x)
+        k = self.k_proj(text_embed)
+        v = self.v_proj(text_embed)
+
+        attn_scores = scaled_dot_product_attention(q, k, v)
+        x = x + attn_scores
+        x = self.attn_norm(x)
+
         
         # Second block
         h = self.norm2(x)
@@ -124,15 +111,11 @@ class TransformerBlock(Module):
             Dropout(dropout)
         )
         
-        self.time_proj = Sequential(
-            SiLU(),
-            Linear(dim, dim)
-        )
     
-    def forward(self, x, t_emb):
+    def forward(self, x):
         # Self-attention with time modulation
         h = self.norm1(x)
-        h = self.attn(h) + self.time_proj(t_emb)
+        h = self.attn(h)
         x = x + h
         
         # MLP

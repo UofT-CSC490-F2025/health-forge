@@ -8,7 +8,7 @@ from model import DiffusionModel
 
 class DiffusionTrainer:
     """Trainer class for diffusion models"""
-    def __init__(self, model, train_loader, test_loader, noise_schedule, 
+    def __init__(self, model, train_loader, test_loader, 
                  cfg, device='cpu'):
         """
         model: diffusion model
@@ -24,7 +24,6 @@ class DiffusionTrainer:
         self.model = model.to(device)
         self.train_loader = train_loader
         self.test_loader = test_loader
-        self.noise_schedule = noise_schedule
         self.device = device
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr)
@@ -42,21 +41,19 @@ class DiffusionTrainer:
         self.model.train()
         total_loss = 0
         
-        for x_t, t, epsilon_true, text_embed in tqdm(self.train_loader, desc='Training'):
-            x_t = x_t.to(self.device)
-            t = t.to(self.device)
-            epsilon_true = epsilon_true.to(self.device)
+        for z_l, text_embed, epsilon_true in tqdm(self.train_loader, desc='Training'):
             
             self.optimizer.zero_grad()
             
             # Forward pass
-            epsilon_pred = self.model(x_t, t, text_embed)
+            epsilon_pred = self.model(z_l, text_embed)
             
             # Loss
             loss = self.criterion(epsilon_pred, epsilon_true)
             
             # Backward pass
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0) #TODO: Keep?
             self.optimizer.step()
             
             total_loss += loss.item()
@@ -72,13 +69,9 @@ class DiffusionTrainer:
         if len(self.test_loader) == 0: return 0
         
         with torch.no_grad():
-            for x_t, t, epsilon_true, text_embed in tqdm(self.test_loader, desc='Validation'):
-                x_t = x_t.to(self.device)
-                t = t.to(self.device)
-                epsilon_true = epsilon_true.to(self.device)
-                
+            for z_l, text_embed, epsilon_true in tqdm(self.test_loader, desc='Validation'):
                 # Forward pass
-                epsilon_pred = self.model(x_t, t, text_embed)
+                epsilon_pred = self.model(z_l, text_embed)
                 
                 # Loss
                 loss = self.criterion(epsilon_pred, epsilon_true)
@@ -103,7 +96,6 @@ class DiffusionTrainer:
         for epoch in range(num_epochs):
             print(f'\nEpoch {epoch + 1}/{num_epochs}')
 
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             # Train
             train_loss = self.train_epoch()
             
@@ -117,8 +109,8 @@ class DiffusionTrainer:
             if self.save_path and val_loss < best_val_loss:
             # if self.save_path and train_loss < best_train_loss:
 
-                # best_val_loss = val_loss
-                best_train_loss = train_loss
+                best_val_loss = val_loss
+                # best_train_loss = train_loss
 
                 torch.save({
                     'epoch': epoch,
@@ -128,6 +120,15 @@ class DiffusionTrainer:
                     'val_loss': val_loss,
                 }, self.save_path)
                 print(f'Saved best model to {self.save_path}')
+        
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+        }, self.save_path)
+        print(f'Saved best model to {self.save_path}')
         
         return self.train_losses, self.val_losses
     

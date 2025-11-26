@@ -3,70 +3,44 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 from tqdm import tqdm
-
+import math
+import random
 
 class DiffusionDataset(Dataset):
     """Dataset for diffusion model training"""
-    def __init__(self, data, text_embeds, alpha_bar):
+    def __init__(self, data, text_embeds, T, noise_a, noise_b, embed_drop_prob, device):
         """
         data: [N, D] tensor - clean data
         alpha_bar: [T] tensor - cumulative product of alphas
         """
         self.data = data
         self.text_embeds = text_embeds
-        self.alpha_bar = alpha_bar
-        self.T = len(alpha_bar)
+        self.T = T
+        self.noise_a = noise_a
+        self.noise_b = noise_b
+        self.embed_drop_prob = embed_drop_prob
+        self.device = device
     
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, idx):
-        x0 = self.data[idx]  # [D]
+        x = self.data[idx]  # original tensor
         text_embed = self.text_embeds[idx]
-        
-        # Sample random timestep (1 to T inclusive)
-        # T is the length of alpha_bar, so use self.T
-        t = torch.randint(1, self.T + 1, (1,)).item()
-        
-        # Sample noise (epsilon)
-        epsilon = torch.randn_like(x0)  # [D]
-        
-        alpha_bar_t = self.alpha_bar[t - 1]
-        sqrt_alpha_bar_t = torch.sqrt(alpha_bar_t)
-        sqrt_one_minus_alpha_bar_t = torch.sqrt(1 - alpha_bar_t)
-        
-        x_t = sqrt_alpha_bar_t * x0 + sqrt_one_minus_alpha_bar_t * epsilon
-        
-        return x_t, t, epsilon, text_embed
+        # Drop text embedding embed_drop_prob % of time
+        text_embed = (1 - ((torch.rand((1,)) <= self.embed_drop_prob)).to(dtype=torch.int).item()) * text_embed 
 
+        u = random.random()
+        l = -2 * math.log(math.tan(self.noise_a * u + self.noise_b))
 
-def create_noise_schedule(T=1000, schedule='linear', device='cpu'):
-    """
-    Create noise schedule for diffusion
-    
-    T: number of timesteps
-    schedule: 'linear' or 'cosine'
-    
-    Returns:
-        beta: [T] - noise schedule
-        alpha: [T] - 1 - beta
-        alpha_bar: [T] - cumulative product of alpha
-    """
-    if schedule == 'linear':
-        beta = torch.linspace(1e-4, 0.02, T, device=device)
-    
-    elif schedule == 'cosine':
-        s = 0.008
-        steps = torch.arange(T + 1, device=device) / T
-        alpha_bar = torch.cos((steps + s) / (1 + s) * np.pi / 2) ** 2
-        alpha_bar = alpha_bar / alpha_bar[0]
-        beta = 1 - alpha_bar[1:] / alpha_bar[:-1]
-        beta = torch.clip(beta, 0, 0.999)
-    
-    alpha = 1 - beta
-    alpha_bar = torch.cumprod(alpha, dim=0)
-    
-    return beta, alpha, alpha_bar
+        signal_coeff = math.sqrt(1 / (1 + math.e ** (-l)))     # alpha
+        noise_coeff = math.sqrt(1 - (signal_coeff ** 2))       # sigma
+
+        epsilon = torch.randn_like(x)
+
+        z_l = (signal_coeff * x) + (noise_coeff * epsilon)
+        
+        return z_l, text_embed, epsilon
 
 
 def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
@@ -88,10 +62,11 @@ def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     """
     test_split = cfg['test_split']
     T = cfg['T']
-    schedule = cfg['schedule']
     num_workers = cfg['num_workers']
     batch_size = cfg['batch_size']
-
+    lambda_min = cfg["lambda_min"]
+    lambda_max = cfg["lambda_max"]
+    embed_drop_prob = cfg["embed_drop_prob"]
 
     # Convert to tensor if needed
     if isinstance(data, np.ndarray):
@@ -101,34 +76,37 @@ def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     data = data.to(device)
     text_embeds = text_embeds.to(device)
     
-    # Create noise schedule
-    beta, alpha, alpha_bar = create_noise_schedule(T, schedule, device)
-    
     # Train/test split
     dataset_size = len(data)
     test_size = int(dataset_size * test_split)
     train_size = dataset_size - test_size
     
-    # train_data, test_data = random_split(
-    #     data, 
-    #     [train_size, test_size],
-    #     generator=torch.Generator().manual_seed(42)
-    # )
     indices = torch.randperm(dataset_size)
     train_indices, test_indices = indices[:train_size], indices[train_size:]
     train_data, test_data = data[train_indices], data[test_indices]
     train_embeds, test_embeds = text_embeds[train_indices], text_embeds[test_indices]
+
+    noise_b = math.atan(math.exp(-lambda_max / 2))
+    noise_a = math.atan(math.exp(-lambda_min / 2)) - noise_b
     
     # Create datasets
     train_dataset = DiffusionDataset(
         train_data,
         train_embeds,
-        alpha_bar
+        T,
+        noise_a,
+        noise_b,
+        embed_drop_prob,
+        device
     )
     test_dataset = DiffusionDataset(
         test_data,
         test_embeds,
-        alpha_bar
+        T,
+        noise_a,
+        noise_b,
+        embed_drop_prob,
+        device
     )
     
     # Create dataloaders
@@ -147,12 +125,5 @@ def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
         pin_memory=(device != 'cpu')
     )
     
-    noise_schedule = {
-        'beta': beta,
-        'alpha': alpha,
-        'alpha_bar': alpha_bar,
-        'T': T
-    }
-    
-    return train_loader, test_loader, noise_schedule
+    return train_loader, test_loader
 
