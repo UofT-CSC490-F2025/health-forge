@@ -31,6 +31,9 @@ class DiffusionTrainer:
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.criterion = nn.MSELoss()
 
+        # Use gradient scaler for AMP
+        self.scaler = torch.amp.GradScaler('cuda', enabled=(self.device.startswith("cuda")))
+
         self.train_losses = []
         self.val_losses = []
 
@@ -39,18 +42,33 @@ class DiffusionTrainer:
         self.model.train()
         total_loss = 0
 
-        for z_l, text_embed, epsilon_true in tqdm(self.train_loader, desc='Training'):
+        # tqdm on the dataloader
+        for z_l, text_embed, epsilon_true in tqdm(self.train_loader, desc='Training', leave=False):
             # Move batch to same device as model
-            z_l = z_l.to(self.device)
-            text_embed = text_embed.to(self.device)
-            epsilon_true = epsilon_true.to(self.device)
+            z_l = z_l.to(self.device, non_blocking=True)
+            text_embed = text_embed.to(self.device, non_blocking=True)
+            epsilon_true = epsilon_true.to(self.device, non_blocking=True)
 
             self.optimizer.zero_grad()
-            epsilon_pred = self.model(z_l, text_embed)
-            loss = self.criterion(epsilon_pred, epsilon_true)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            self.optimizer.step()
+
+            # Mixed precision forward/backward
+            with torch.cuda.amp.autocast(enabled=(self.device.startswith("cuda"))):
+                epsilon_pred = self.model(z_l, text_embed)
+                loss = self.criterion(epsilon_pred, epsilon_true)
+
+            # Scaled backward
+            if self.device.startswith("cuda"):
+                self.scaler.scale(loss).backward()
+                # gradient clipping on the unscaled gradients requires scaler.unscale_
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.optimizer.step()
+
             total_loss += loss.item()
 
         avg_loss = total_loss / len(self.train_loader)
@@ -66,13 +84,15 @@ class DiffusionTrainer:
 
         device = self.device
         with torch.no_grad():
-            for z_l, text_embed, epsilon_true in tqdm(self.test_loader, desc='Validation'):
-                z_l = z_l.to(device)
-                text_embed = text_embed.to(device)
-                epsilon_true = epsilon_true.to(device)
+            for z_l, text_embed, epsilon_true in tqdm(self.test_loader, desc='Validation', leave=False):
+                z_l = z_l.to(device, non_blocking=True)
+                text_embed = text_embed.to(device, non_blocking=True)
+                epsilon_true = epsilon_true.to(device, non_blocking=True)
 
-                epsilon_pred = self.model(z_l, text_embed)
-                loss = self.criterion(epsilon_pred, epsilon_true)
+                with torch.cuda.amp.autocast(enabled=(device.startswith("cuda"))):
+                    epsilon_pred = self.model(z_l, text_embed)
+                    loss = self.criterion(epsilon_pred, epsilon_true)
+
                 total_loss += loss.item()
 
         avg_loss = total_loss / len(self.test_loader)

@@ -45,8 +45,8 @@ aws_secret = modal.Secret.from_name("aws-secret")
 # GPU TRAINING WORKER
 # ---------------------------
 @app.function(
-    gpu=["A100"]*8,  # Request 8 GPUs in **one container**
-    timeout=5*60*60,
+    gpu=["H100"],  # Request 8 GPUs in **one container**
+    timeout=20*60*60,
     image=image,
     secrets=[aws_secret]
 )
@@ -70,6 +70,7 @@ def train_worker(rank: int = 0, world_size: int = 8):
 
     # Download dataset from S3
     s3 = boto3.client("s3")
+
     vec_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
     s3.download_fileobj(BUCKET, VECTORS_KEY, vec_tmp)
     vec_tmp.close()
@@ -80,15 +81,27 @@ def train_worker(rank: int = 0, world_size: int = 8):
     emb_tmp.close()
     text_embeds = np.load(emb_tmp.name)
 
-    # Train with DDP
-    train_from_arrays(
-    cfg, vectors, text_embeds,
-    save_path=f"/root/model_container{rank}.pt"
-)
+    N = 100000   # choose your reduced dataset size
+    vectors = vectors[:N]
+    text_embeds = text_embeds[:N]
+    print("Dataset reduced to:", len(vectors))
 
-    # Upload model (rank 0)
+    # Train with DDP or single-machine multi-GPU
+    train_from_arrays(
+        cfg, vectors, text_embeds,
+        save_path="/root/best_diffusion_model.pt"  # ensure correct filename
+    )
+
+    # Upload best model (rank 0 only)
+    best_model_path = "/root/best_diffusion_model.pt"
+
     if rank == 0:
-        s3.upload_file(f"/root/ddp_model.pt", BUCKET, MODEL_OUTPUT_KEY)
+        if os.path.exists(best_model_path):
+            print("Uploading best model to S3...")
+            s3.upload_file(best_model_path, BUCKET, MODEL_OUTPUT_KEY)
+            print("Upload complete.")
+        else:
+            print("ERROR: best model file not found:", best_model_path)
 
     # Cleanup
     os.unlink(vec_tmp.name)
@@ -100,7 +113,7 @@ def train_worker(rank: int = 0, world_size: int = 8):
 # ---------------------------
 @app.local_entrypoint()
 def main():
-    # Since we use env:// init_method, spawn only **one process** in container
+    # run training in the modal container
     h = train_worker.spawn(rank=0, world_size=8)
     h.get()
     print("Distributed training complete.")
