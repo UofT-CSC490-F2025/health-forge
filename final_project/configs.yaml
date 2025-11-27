@@ -2,7 +2,7 @@ model:
   input_dim: 8
   hidden_dim: 512
   text_embed_dim: 384
-  num_layers: 6
+  num_layers: 12
   num_heads: 8
   dropout: 0.1
   use_attention: False
@@ -19,9 +19,10 @@ data_utils:
 
 trainer:
   lr: 0.0001
-  num_epochs: 2000
+  num_epochs: 20000
   save_path: best_diffusion_model.pt
 
 sampler:
   guidance_scale: 0.3
   var_interpolation_coeff: 0.3
+  text_embedding_model_name: all-MiniLM-L6-v2

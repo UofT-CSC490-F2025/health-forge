@@ -80,6 +80,7 @@ def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     dataset_size = len(data)
     test_size = int(dataset_size * test_split)
     train_size = dataset_size - test_size
+    print(f"Train samples: {train_size} | Test samples {test_size}")
     
     indices = torch.randperm(dataset_size)
     train_indices, test_indices = indices[:train_size], indices[train_size:]

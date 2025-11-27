@@ -27,7 +27,6 @@ class DiffusionTrainer:
         self.device = device
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr)
-
         self.criterion = nn.MSELoss()
         # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.num_epochs)
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.9)
@@ -106,6 +105,7 @@ class DiffusionTrainer:
             print(f'Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f} | LR: {curr_lr:.6f}')
             
             # Save best model
+            # if True: #TODO: !!! DONT KEEP THIS !!!
             if self.save_path and val_loss < best_val_loss:
             # if self.save_path and train_loss < best_train_loss:
 
@@ -120,14 +120,6 @@ class DiffusionTrainer:
                     'val_loss': val_loss,
                 }, self.save_path)
                 print(f'Saved best model to {self.save_path}')
-        
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'train_loss': train_loss,
-            'val_loss': val_loss,
-        }, self.save_path)
         print(f'Saved best model to {self.save_path}')
         
         return self.train_losses, self.val_losses
