@@ -1,7 +1,7 @@
 model:
-  input_dim: 1024
+  input_dim: 8
   hidden_dim: 512
-  text_embed_dim: 768
+  text_embed_dim: 384
   num_layers: 6
   num_heads: 8
   dropout: 0.1

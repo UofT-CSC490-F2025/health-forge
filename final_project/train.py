@@ -3,27 +3,37 @@ from model import DiffusionModel
 from trainer import DiffusionTrainer
 from data_utils import prepare_diffusion_dataloaders
 import yaml
-import numpy as np
+import pickle
+import argparse
 
-def train_from_arrays(cfg, data, text_embeds, save_path="best_diffusion_model.pt"):
-    """Train numpy arrays on a single GPU (or CPU)"""
+def train_from_pkl(cfg, pkl_path, save_path="best_diffusion_model.pt"):
+    """Train using a pickle file containing samples and text embeddings"""
+
+    # Load data from pickle
+    with open(pkl_path, "rb") as f:
+        data = pickle.load(f)
+
+    samples = data["samples"]
+    text_embeds = data["text_embeds"]
+
+    assert samples.shape[0] == text_embeds.shape[0], "Mismatch between samples and text embeddings"
+
+    # Take first num_samples if provided in config
+    num_samples = cfg.get("num_samples", None)
+    if num_samples is not None:
+        samples = samples[:num_samples]
+        text_embeds = text_embeds[:num_samples]
+
+    # Scale data from 0-1 to -1..1 if needed
+    if cfg.get("data_scale_from_zero_one", True):
+        samples = (samples * 2) - 1
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Training on device: {device}")
 
-    # Take first num_samples if provided
-    num_samples = cfg.get("num_samples", None)
-    if num_samples is not None:
-        data = data[:num_samples]
-        text_embeds = text_embeds[:num_samples]
-
-    # Map data from 0-1 to -1..1 if needed
-    if cfg.get("data_scale_from_zero_one", True):
-        data = (data * 2) - 1
-
     # Prepare dataloaders
     train_loader, test_loader = prepare_diffusion_dataloaders(
-        data, text_embeds, cfg["data_utils"], device
+        samples, text_embeds, cfg["data_utils"], device
     )
 
     # Initialize model
@@ -38,6 +48,7 @@ def train_from_arrays(cfg, data, text_embeds, save_path="best_diffusion_model.pt
         device=device
     )
 
+    # Train
     train_losses, val_losses = trainer.train()
 
     # Save checkpoint
@@ -54,18 +65,14 @@ def train_from_arrays(cfg, data, text_embeds, save_path="best_diffusion_model.pt
 
 
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("cfg_path")
-    parser.add_argument("vectors_path")
-    parser.add_argument("embeds_path")
+    parser.add_argument("cfg_path", help="Path to YAML config file")
+    parser.add_argument("pkl_path", help="Path to .pkl file containing samples and embeddings")
     args = parser.parse_args()
 
+    # Load config
     with open(args.cfg_path) as f:
         cfg = yaml.safe_load(f)
 
-    data = np.load(args.vectors_path)
-    text_embeds = np.load(args.embeds_path)
-
-    train_from_arrays(cfg, data, text_embeds)
+    # Train from pickle
+    train_from_pkl(cfg, args.pkl_path)

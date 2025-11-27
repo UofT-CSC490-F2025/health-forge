@@ -30,7 +30,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     model.eval()
     model.to(device=device)
 
-    z_t = torch.randn((1, cfg["model"]["input_dim"]))
+    z_t = torch.randn((100, cfg["model"]["input_dim"]))
     z_t = z_t.to(device=device)
 
     lambda_schedule = torch.linspace(lambda_min, lambda_max, T)

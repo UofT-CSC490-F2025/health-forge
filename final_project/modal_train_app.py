@@ -3,18 +3,13 @@ import boto3
 import tempfile
 import os
 import random
-import socket
-import time
 
 # ---------------------------
 # CONFIG
 # ---------------------------
 BUCKET = "healthforge-final-bucket"
-VECTORS_KEY = "original_vectors.npy"
-EMBEDS_KEY = "vector_tag_embeddings.npy"
+MERGED_KEY = "data/final_merged.pkl"
 MODEL_OUTPUT_KEY = "results/best_diffusion_model.pt"
-
-NUM_WORKERS = 8  # number of containers / GPUs
 
 app = modal.App("diffusion-training-app")
 
@@ -45,21 +40,18 @@ aws_secret = modal.Secret.from_name("aws-secret")
 # GPU TRAINING WORKER
 # ---------------------------
 @app.function(
-    gpu=["H100"],  # Request 8 GPUs in **one container**
+    gpu=["H100"],       # single-GPU container
     timeout=20*60*60,
     image=image,
     secrets=[aws_secret]
 )
-def train_worker(rank: int = 0, world_size: int = 8):
+def train_worker():
     import torch
     import yaml
-    import tempfile
-    import os
-    import numpy as np
-    from train import train_from_arrays
+    import pickle
+    from train import train_from_pkl
 
-    # GPU check
-    print("GPUs available in container:", torch.cuda.device_count())
+    print("GPUs available:", torch.cuda.device_count())
     for i in range(torch.cuda.device_count()):
         print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
 
@@ -68,55 +60,67 @@ def train_worker(rank: int = 0, world_size: int = 8):
     with open(cfg_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    # Download dataset from S3
+    # Download PKL
+    print("Downloading final_merged.pkl from S3...")
     s3 = boto3.client("s3")
+    pkl_tmp = tempfile.NamedTemporaryFile(suffix=".pkl", delete=False)
+    s3.download_fileobj(BUCKET, MERGED_KEY, pkl_tmp)
+    pkl_tmp.close()
 
-    vec_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
-    s3.download_fileobj(BUCKET, VECTORS_KEY, vec_tmp)
-    vec_tmp.close()
-    vectors = np.load(vec_tmp.name)
+    print("Loading PKL...")
+    with open(pkl_tmp.name, "rb") as f:
+        merged_data = pickle.load(f)
 
-    emb_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
-    s3.download_fileobj(BUCKET, EMBEDS_KEY, emb_tmp)
-    emb_tmp.close()
-    text_embeds = np.load(emb_tmp.name)
+    samples = merged_data["samples"]
+    text_embeds = merged_data["text_embeds"]
 
-    N = 100000   # choose your reduced dataset size
-    vectors = vectors[:N]
-    text_embeds = text_embeds[:N]
-    print("Dataset reduced to:", len(vectors))
+    print("Loaded dataset:")
+    print(" samples:", samples.shape)
+    print(" text_embeds:", text_embeds.shape)
 
-    # Train with DDP or single-machine multi-GPU
-    train_from_arrays(
-        cfg, vectors, text_embeds,
-        save_path="/root/best_diffusion_model.pt"  # ensure correct filename
+    # Apply truncation
+    num_samples = cfg.get("num_samples", None)
+    if num_samples:
+        samples = samples[:num_samples]
+        text_embeds = text_embeds[:num_samples]
+        print(f"Dataset truncated to {num_samples} samples")
+
+        # MUST overwrite PKL for train_from_pkl to use truncated data
+        new_data = {
+            "samples": samples,
+            "text_embeds": text_embeds
+        }
+        with open(pkl_tmp.name, "wb") as f:
+            pickle.dump(new_data, f)
+
+    # Train
+    train_from_pkl(
+        cfg,
+        pkl_path=pkl_tmp.name,
+        save_path="/root/best_diffusion_model.pt"
     )
 
-    # Upload best model (rank 0 only)
+    # Upload the trained model
     best_model_path = "/root/best_diffusion_model.pt"
-
-    if rank == 0:
-        if os.path.exists(best_model_path):
-            print("Uploading best model to S3...")
-            s3.upload_file(best_model_path, BUCKET, MODEL_OUTPUT_KEY)
-            print("Upload complete.")
-        else:
-            print("ERROR: best model file not found:", best_model_path)
+    if os.path.exists(best_model_path):
+        print("Uploading best model to S3...")
+        s3.upload_file(best_model_path, BUCKET, MODEL_OUTPUT_KEY)
+        print("Upload complete.")
+    else:
+        print("ERROR: best model file not found")
 
     # Cleanup
-    os.unlink(vec_tmp.name)
-    os.unlink(emb_tmp.name)
+    os.unlink(pkl_tmp.name)
 
 
 # ---------------------------
-# ORCHESTRATOR FUNCTION
+# ENTRYPOINT
 # ---------------------------
 @app.local_entrypoint()
 def main():
-    # run training in the modal container
-    h = train_worker.spawn(rank=0, world_size=8)
+    h = train_worker.spawn()
     h.get()
-    print("Distributed training complete.")
+    print("Training complete.")
 
 if __name__ == "__main__":
     with app.run():
