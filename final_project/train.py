@@ -8,7 +8,7 @@ import numpy as np
 import pickle
 
 
-def train(cfg, data, text_embeds):
+def train(cfg, data, text_embeds, resume_ckpt_path):
      # Setup
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
@@ -22,6 +22,7 @@ def train(cfg, data, text_embeds):
     
     # Create model (you need to implement this)
     model = DiffusionModel(cfg["model"])
+
     # Create trainer
     trainer = DiffusionTrainer(
         model=model,
@@ -30,13 +31,14 @@ def train(cfg, data, text_embeds):
         cfg=cfg["trainer"],
         device=device
     )
+    if resume_ckpt_path is not None:
+        trainer.load_checkpoint(resume_ckpt_path)
     
     # Train
     train_losses, val_losses = trainer.train()
     
 
     # Load best model
-    trainer.load_checkpoint('best_diffusion_model.pt')
     pass
 
 
@@ -44,6 +46,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("cfg_path")
     parser.add_argument("data_path")
+    parser.add_argument("--resume_ckpt_path", required=False)
     args = parser.parse_args()
 
     with open(args.cfg_path) as f:
@@ -55,10 +58,16 @@ if __name__ == '__main__':
     samples, descs, llm_descs, text_embeds = data["samples"], data["descs"], data["llm_decs"], data["text_embeds"]
     assert samples.shape[0] == text_embeds.shape[0], "Different number of samples and text embedddings"
 
-    num_samples = 10
+    num_samples = 100
     data = (samples[:num_samples])
     text_embeds = (text_embeds[:num_samples])
     data = (data * 2) -1
+    # for i in range(num_samples):
+    #     print(samples[i])
+    #     print(llm_descs[i])
+    #     print(descs[i])
+    #     print("\n")
+    # exit(-1)
     
-    train(cfg, data, text_embeds)
+    train(cfg, data, text_embeds, args.resume_ckpt_path)
    
