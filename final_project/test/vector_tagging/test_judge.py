@@ -86,6 +86,7 @@ def mock_hf_for_load_model(monkeypatch):
 # Constructor / init
 # -----------------------
 
+# Need to test if the initializer function works properly and do a sanity check on model hyperparameters.
 def test_init_tokenizer_only(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -105,6 +106,7 @@ def test_init_tokenizer_only(monkeypatch):
 # _format_vector
 # -----------------------
 
+# Basic tests for the formatting the vectors. Important for the LLM understanding the prompt
 def test_format_vector_non_zero_only(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -119,7 +121,7 @@ def test_format_vector_non_zero_only(monkeypatch):
     assert "- bp: 0.5" in txt
     assert "gender" not in txt
 
-
+#Test chosen to evaluate basic functionality when vector is all zeroes
 def test_format_vector_all_zeros(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -131,11 +133,21 @@ def test_format_vector_all_zeros(monkeypatch):
 
     assert txt == "(All zeros)"
 
+#Test case chosen to ensure that in case dimension mismatch, the function fails gracefully.
+def test_format_vector_throws_error_on_dim_mismatch(monkeypatch):
+     with pytest.raises(ValueError):
+        mock_tokenizer(monkeypatch)
+        vec_defs = np.array(["a", "b", "c"])
+        judge = ej.EHRLabelJudge(vec_defs)
+
+        vec = np.array([0.0, 0.0])
+        txt = judge._format_vector(vec)
+
 
 # -----------------------
 # _build_prompt
 # -----------------------
-
+# Basic sanity check for prompt builder
 def test_build_prompt_contains_vector_and_label(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -169,6 +181,7 @@ def test_build_prompt_contains_vector_and_label(monkeypatch):
 # _parse_output
 # -----------------------
 
+# Tests the JSON output parser with a standard output, chosen as a sanity check to ensure JSONs can be parsed properly.
 def test_parse_output_valid_json(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -192,7 +205,7 @@ def test_parse_output_valid_json(monkeypatch):
     assert scores == [5, 4, 3, 2, 1]
     assert expl == "good label"
 
-
+# Tests the JSON output parser with an incomplete output, test case chosen because we want to ensure the pipeline doesn't fail on minor output problems
 def test_parse_output_missing_fields(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -215,7 +228,7 @@ def test_parse_output_missing_fields(monkeypatch):
     assert scores == [3, 0, 2, 0, 0]
     assert expl == "partial"
 
-
+# Test chosen to ensure that we can extract clean outputs when the LLM includes extra tests
 def test_parse_output_with_wrapped_text(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -241,7 +254,7 @@ def test_parse_output_with_wrapped_text(monkeypatch):
     assert scores == [1, 2, 3, 4, 5]
     assert expl == "wrapped"
 
-
+# Test chosen to ensure that invalid outputs fail gracefully.
 def test_parse_output_invalid_returns_zeros(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -259,6 +272,7 @@ def test_parse_output_invalid_returns_zeros(monkeypatch):
 # judge (single)
 # -----------------------
 
+# Test to see that the judge pipeline parses it's outputs correctly, important for to test non-model code inside the inference pipeline
 def test_judge_uses_pipe_and_parses(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -300,6 +314,7 @@ def test_judge_uses_pipe_and_parses(monkeypatch):
 # judge_batch
 # -----------------------
 
+# Test to see that the judge pipeline parses it's outputs correctly on multiple inputs, important for to test non-model code inside the inference pipeline
 def test_judge_batch_multiple(monkeypatch):
     mock_tokenizer(monkeypatch)
 
@@ -353,11 +368,7 @@ def test_judge_batch_multiple(monkeypatch):
     assert scores2 == [5, 4, 3, 2, 1]
     assert expl2 == "second"
 
-
-# -----------------------
-# load_model wiring (optional)
-# -----------------------
-
+# Sanity check for the EHR label constructor.
 def test_load_model_sets_model_and_pipe(monkeypatch):
     """
     We don't actually load a real 70B model.
