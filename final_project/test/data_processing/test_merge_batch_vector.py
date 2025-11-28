@@ -1,10 +1,7 @@
-# test_merge_s3_batches.py
 import io
 import numpy as np
 import pytest
 
-# ⬇️ CHANGE THIS to your actual module path
-# e.g. import final_project.vector_tagging.merge_batches as mod
 import final_project.data_processing.merge_batch_vector as mod
 
 

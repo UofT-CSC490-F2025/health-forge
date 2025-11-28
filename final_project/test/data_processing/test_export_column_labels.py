@@ -4,7 +4,6 @@ import io
 import numpy as np
 import pytest
 
-# CHANGE THIS to the actual module path for your file
 import final_project.data_processing.export_column_labels as mod
 
 
@@ -34,9 +33,9 @@ class FakeCursor:
         if "SELECT DISTINCT icd_code, icd_version FROM diagnoses_icd" in q:
             # (icd_code, icd_version)
             return [
-                ("250.00", 9),   # ICD-9 -> will go through GEM map
-                ("E11.65", 10),  # ICD-10
-                ("A09", 10),     # short code, still valid
+                ("250.00", 9),   
+                ("E11.65", 10),  
+                ("A09", 10),    
             ]
 
         return []
@@ -78,7 +77,7 @@ class FakeS3:
 
 
 # ---------------------------
-# Tests for small helpers (optional, but nice)
+# Tests for small helpers
 # ---------------------------
 
 def test_normalize_code_strip():
@@ -90,7 +89,7 @@ def test_normalize_code_strip():
 def test_collapse_to_icd10_3():
     assert mod.collapse_to_icd10_3("E1165") == "E11"
     assert mod.collapse_to_icd10_3("E11") == "E11"
-    assert mod.collapse_to_icd10_3("A9") is None  # len < 3 → None per your code
+    assert mod.collapse_to_icd10_3("A9") is None 
     assert mod.collapse_to_icd10_3(None) is None
 
 
@@ -132,21 +131,14 @@ def test_export_column_labels_local(monkeypatch, tmp_path):
 
     monkeypatch.setattr(mod.boto3, "client", fake_boto3_client)
 
-    # 3. Patch load_dxccsr_mapping so we don’t depend on real CSV / S3
-    #    Map two ICD prefixes to simple descriptions
     def fake_load_dxccsr_mapping():
         return {
             "E11": "Type 2 diabetes mellitus",
             "A09": "Infectious gastroenteritis",
-            # note: "25000" (ICD-9) will be converted via GEM to some ICD-10,
-            # and then collapsed; we can choose to map that prefix too,
-            # or let it fall back to "_unknown".
         }
 
     monkeypatch.setattr(mod, "load_dxccsr_mapping", fake_load_dxccsr_mapping)
 
-    # 4. Patch load_gem_from_s3 so ICD-9 → ICD-10 is deterministic
-    #    e.g. "25000" -> ["E1165"] → collapsed -> "E11"
     def fake_load_gem_from_s3(bucket, key):
         return {"25000": ["E1165"]}
 
@@ -156,8 +148,6 @@ def test_export_column_labels_local(monkeypatch, tmp_path):
     csv_path = tmp_path / "columns.csv"
     monkeypatch.setattr(mod, "TEMP_PATH", str(csv_path))
 
-    # 6. Run the Modal function **locally**
-    #    export_column_labels is a modal.Function, so use .local()
     result = mod.export_column_labels.local()
 
     # Basic sanity checks on return value

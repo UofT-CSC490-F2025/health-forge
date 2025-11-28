@@ -1,8 +1,6 @@
-# test_gpu_ehr_processing.py
 import numpy as np
 import pytest
 
-# CHANGE THIS to your actual module name
 import final_project.data_processing.EHR_data_processing_modal_final as mod
 
 
@@ -138,21 +136,17 @@ class FakeS3:
         self.uploads.append((filename, bucket, key))
 
 
-# ---------------------------
-# batch_worker test (with heavy monkeypatching)
-# ---------------------------
+
 
 def test_batch_worker_builds_vectors_and_uploads(monkeypatch, tmp_path):
-    # --- Monkeypatch DB connection ---
+    # Monkeypatch DB connection
     def fake_connect(*args, **kwargs):
         return FakeConnection()
 
     monkeypatch.setattr(mod.psycopg2, "connect", fake_connect)
 
-    # --- Monkeypatch GEM loading so we don't hit S3 at all for this part ---
+    # Monkeypatch GEM loading so we don't hit S3
     def fake_load_gem_from_s3(bucket, key):
-        # Simpler mapping: ICD9 "25000" -> ICD10 "E1165"
-        # so collapsed 3-digit is "E11"
         return {"25000": ["E1165"]}
 
     monkeypatch.setattr(mod, "load_gem_from_s3", fake_load_gem_from_s3)
@@ -170,11 +164,10 @@ def test_batch_worker_builds_vectors_and_uploads(monkeypatch, tmp_path):
 
     monkeypatch.setattr(mod.boto3, "client", fake_boto3_client)
 
-
     def do_nothing(a,b):
         pass
 
-    monkeypatch.setattr(mod.np, "save", do_nothing)
+    monkeypatch.setattr(mod.np, "save", do_nothing) #don't save anything to disk
     # --- Run batch_worker on a tiny batch of 2 subjects ---
     subject_ids = [1, 2]
     res = mod.batch_worker.local(subject_ids, batch_index=0)

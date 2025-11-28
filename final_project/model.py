@@ -112,7 +112,7 @@ class TransformerBlock(Module):
         )
         
     
-    def forward(self, x):
+    def forward(self, x, text_embed):
         # Self-attention with time modulation
         h = self.norm1(x)
         h = self.attn(h)
@@ -127,6 +127,10 @@ class TransformerBlock(Module):
 class MultiHeadAttention(Module):
     def __init__(self, dim, num_heads, dropout):
         super().__init__()
+
+        if dim%num_heads > 0:
+            raise ValueError("Total dimension not divisible by heads")
+
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.scale = self.head_dim ** -0.5

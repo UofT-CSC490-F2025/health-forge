@@ -2,11 +2,6 @@ import numpy as np
 import torch
 import pytest
 
-import sys
-print(sys.path)
-
-# 🔧 Adjust this import to match your file name
-# e.g. from biomistral_vector_tagger import BioMistralVectorTagger
 from ...vector_tagging.LLM.vector_tagger import BioMistralVectorTagger
 
 

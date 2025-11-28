@@ -1,5 +1,5 @@
 import torch
-from model import DiffusionModel
+from .model import DiffusionModel
 import argparse
 import yaml
 from tqdm import tqdm
