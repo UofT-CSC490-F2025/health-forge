@@ -6,11 +6,11 @@ from vector_tagger import BioMistralVectorTagger
 
 BUCKET_NAME = "healthforge-final-bucket"
 S3_BATCH_PREFIX = "vector_batches/"
-FINAL_S3_KEY = "merged_patient_vectors.npy"
+FINAL_S3_KEY = "original_vectors.npy"
 VECTOR_DEFINITION_KEY = "patient_vector_columns.csv"
-ORIGINAL_VECTOR_KEY = "original_vectors.npy"
-VECTOR_TAG_KEY = "vector_tags.npy"
-VECTOR_TAG_EMBEDDING_KEY = "vector_tag_embeddings.npy"
+ORIGINAL_VECTOR_KEY = "original_vectors_gemma.npy"
+VECTOR_TAG_KEY = "vector_tags_gemma.npy"
+VECTOR_TAG_EMBEDDING_KEY = "vector_tag_embeddings_gemma.npy"
 TEMP_DIR = "/tmp"
 
 BATCH_SIZE = 512  # patients per GPU task
@@ -35,7 +35,7 @@ llm = None
     gpu="H100",
     timeout=5 * 60 * 60,
     image=modal.Image.debian_slim().pip_install([
-        "boto3", "numpy", "torch", "psycopg2-binary", "transformers", "accelerate"
+        "boto3", "numpy", "torch", "psycopg2-binary", "transformers", "accelerate", "sentence_transformers"
     ]).add_local_file("vector_tagger.py", remote_path="/root/vector_tagger.py"),
     secrets=[
         modal.Secret.from_name("aws-secret")
@@ -69,7 +69,7 @@ def batch_worker(vector_batch: np.ndarray, batch_index: int, definition_array: n
 # ---------------------------
 @app.function(
         timeout=5 * 60 * 60,
-        image=modal.Image.debian_slim().pip_install(["psycopg2-binary", "boto3", "numpy", "torch", "transformers", "accelerate"]).add_local_file("vector_tagger.py", remote_path="/root/vector_tagger.py"),
+        image=modal.Image.debian_slim().pip_install(["psycopg2-binary", "boto3", "numpy", "torch", "transformers", "accelerate", "sentence_transformers"]).add_local_file("vector_tagger.py", remote_path="/root/vector_tagger.py"),
          secrets=[
         modal.Secret.from_name("aws-secret")
     ],)
@@ -144,9 +144,6 @@ def tag_ehr_vectors():
     s3.upload_file(embed_local, BUCKET_NAME, VECTOR_TAG_EMBEDDING_KEY)
 
     print("Files uploaded to S3")
-
-
-    
 
 
 @app.local_entrypoint()

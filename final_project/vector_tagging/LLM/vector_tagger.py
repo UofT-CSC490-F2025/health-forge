@@ -1,6 +1,7 @@
 from typing import List, Tuple
 import torch
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, pipeline
+from sentence_transformers import SentenceTransformer
 import numpy as np
 
 class BioMistralVectorTagger:
@@ -8,8 +9,7 @@ class BioMistralVectorTagger:
     model = None
     pipeline = None
     vector_definitions: np.ndarray = None
-    encoder = None
-    bert_tokenizer = None
+    text_encoder = None
     def __init__(self, vector_definitions: List[str]):
 
         print("--------------------------------------------")
@@ -59,34 +59,25 @@ class BioMistralVectorTagger:
         print("--------------------------------------------\n\n")
 
 
-        print("Loading bert encoder...")
-        BERT = "bert-base-uncased"  # or your BioBERT/ClinicalBERT
-        bert_tokenizer = AutoTokenizer.from_pretrained(BERT)
-        model = AutoModel.from_pretrained(BERT)
-        self.encoder = model
-        self.bert_tokenizer = bert_tokenizer
+        print("Loading sentence transformer../")
+        self.text_encoder = SentenceTransformer(
+            "sentence-transformers/embeddinggemma-300m-medical",
+            device="cuda",
+        )
         print("Finished loading encoder")
         
 
     def encode_text(self, text_batch: List[str]) -> np.ndarray:
-        encoded = self.bert_tokenizer(
+        emb = self.text_encoder.encode(
             text_batch,
-            padding=True,          # pad to longest in the batch
-            truncation=True,       # cut off if longer than max_length
-            max_length=128,        # or whatever you want
-            return_tensors="pt",
-        ).to(self.encoder.device)
+            convert_to_numpy=True,     
+            batch_size=32,             
+            show_progress_bar=False,
+            normalize_embeddings=False 
+        )
+        return emb                    
 
-        outputs = self.encoder(**encoded)           # (batch, seq_len, hidden_size)
-        last_hidden = outputs.last_hidden_state
-
-        # Example: mean pooling over tokens
-        mask = encoded["attention_mask"].unsqueeze(-1).type_as(last_hidden)
-        summed = (last_hidden * mask).sum(dim=1)
-        counts = mask.sum(dim=1).clamp(min=1e-9)
-        emb = summed / counts                # (batch, hidden_size)
-
-        return emb.detach().cpu().numpy()
+    
     
     def format_vector_full(self, vec): # Testable
         txt = "Patient Facts: \n"
