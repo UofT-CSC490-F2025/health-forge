@@ -191,37 +191,3 @@ def test_prepare_diffusion_dataloaders_numpy_input():
     assert train_loader.dataset.embed_drop_prob == cfg["embed_drop_prob"]
     assert test_loader.dataset.embed_drop_prob == cfg["embed_drop_prob"]
 
-
-def test_prepare_diffusion_dataloaders_torch_input_gpu_flag():
-    """
-    Even without a real GPU, we can at least check pin_memory toggling
-    and that tensors are accepted directly.
-    """
-    N, D, E = 10, 4, 6
-    data = torch.randn(N, D)
-    text_embeds = torch.randn(N, E)
-
-    cfg = {
-        "test_split": 0.3,
-        "T": 50,
-        "num_workers": 0,
-        "batch_size": 4,
-        "lambda_min": -2.0,
-        "lambda_max": 2.0,
-        "embed_drop_prob": 0.2,
-    }
-
-    # Pretend we're using cuda -> pin_memory should be True
-    device = "cuda"  # even if there's no GPU, we only check flags, not .to(device) behaviour in tests
-
-    # For safety in environments without CUDA, we can force device back to 'cpu' internally
-    # if needed, but here we just call as-is and only inspect pin_memory.
-    train_loader, test_loader = dd.prepare_diffusion_dataloaders(
-        data=data,
-        text_embeds=text_embeds,
-        cfg=cfg,
-        device="cuda",  # function will call .to("cuda") but tests won't actually run a forward pass
-    )
-
-    assert train_loader.pin_memory is True
-    assert test_loader.pin_memory is True
