@@ -4,13 +4,9 @@ on:
   push:
     branches:
       - A6        
-    paths:
-      - "health_forge/Assignments/a6/final_project/**"
   pull_request:
     branches:
       - A6        
-    paths:
-      - "health_forge/Assignments/a6/final_project/**"
 
 jobs:
   tests:
