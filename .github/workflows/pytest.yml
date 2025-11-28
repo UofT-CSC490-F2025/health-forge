@@ -2,11 +2,11 @@ name: Run tests for final_project
 
 on:
   push:
-    paths:
-      - "health_forge/Assignments/a6/final_project/**"
+    branches:
+      - A6
   pull_request:
-    paths:
-      - "health_forge/Assignments/a6/final_project/**"
+    branches:
+      - A6
 
 jobs:
   tests:
