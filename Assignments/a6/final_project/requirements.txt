@@ -10,3 +10,4 @@ torch
 torch
 tqdm
 transformers
+pytest-cov
