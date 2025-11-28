@@ -14,7 +14,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: health_forge/Assignments/a6/final_project
+        working-directory: Assignments/a6/final_project
 
     steps:
       - name: Checkout repository
