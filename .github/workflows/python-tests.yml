@@ -1,0 +1,35 @@
+name: Run tests for final_project
+
+on:
+  push:
+    paths:
+      - "health_forge/Assignments/a6/final_project/**"
+  pull_request:
+    paths:
+      - "health_forge/Assignments/a6/final_project/**"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: health_forge/Assignments/a6/final_project
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=final_project test/
