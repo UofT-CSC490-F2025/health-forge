@@ -8,19 +8,17 @@ on:
     branches:
       - A6
 
-permissions:
-  contents: read
-  pull-requests: write
-
 jobs:
   tests:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: Assignments/a6/final_project
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -29,13 +27,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd health_forge/Assignments/a6/final_project
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run tests with coverage
         run: |
-          cd health_forge/Assignments/a6/final_project
           pytest \
             --junitxml=pytest.xml \
             --cov=final_project \
