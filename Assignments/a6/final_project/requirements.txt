@@ -1,0 +1,13 @@
+boto3
+modal
+numpy
+pandas
+psycopg2
+pytest
+PyYAML
+sentence_transformers
+torch
+torch
+tqdm
+transformers
+pytest-cov

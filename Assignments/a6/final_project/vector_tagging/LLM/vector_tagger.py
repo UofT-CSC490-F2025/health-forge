@@ -267,7 +267,8 @@ class BioMistralVectorTagger:
         
 if __name__== '__main__':
     bio = BioMistralVectorTagger(np.array(['age']))
-    res = bio.tag_vectors(np.array([[69.0], [67.0], [7.0]]))
-    print(res)
-    print(bio.encode_text([res[i][1] for i in range(0, len(res))]))
+    embeddings = bio.encode_text(("african american male with diabetes", "black man with a disease also known as diabetes", "white female healthy", "chinese female with diabetes"))
+
+    similarity = np.array([np.dot(embeddings[0], embeddings[1]), np.dot(embeddings[0], embeddings[2]), np.dot(embeddings[0], embeddings[3])])
+    print((similarity - similarity.min()) / (similarity.max() - similarity.min()))
 

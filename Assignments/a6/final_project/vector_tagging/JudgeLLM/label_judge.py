@@ -63,6 +63,9 @@ class EHRLabelJudge:
     # Format vector into readable text
     # ------------------------------------------------------------
     def _format_vector(self, vector: np.ndarray):
+
+        if len(vector) != len(self.vector_definitions):
+            raise ValueError("Vector not of same length as definition vector")
         mapping = ""
         for i, value in enumerate(vector):
             if float(value) != 0.0:
