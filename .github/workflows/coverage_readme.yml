@@ -78,4 +78,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "docs: update coverage in README"
-          file_pattern: Assignments/a6/final_project/README.md
+          file_pattern: README.md
