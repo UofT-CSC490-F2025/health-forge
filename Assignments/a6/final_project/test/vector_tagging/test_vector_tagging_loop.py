@@ -1,4 +1,3 @@
-# test_vector_tagging.py
 import io
 import sys
 import numpy as np

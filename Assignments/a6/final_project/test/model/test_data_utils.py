@@ -1,5 +1,3 @@
-# test_diffusion_data.py
-
 import math
 import numpy as np
 import torch

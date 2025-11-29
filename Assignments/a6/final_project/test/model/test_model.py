@@ -1,5 +1,3 @@
-# test_diffusion_model.py
-
 import torch
 import pytest
 

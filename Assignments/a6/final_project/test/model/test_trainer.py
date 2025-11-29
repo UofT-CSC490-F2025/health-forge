@@ -1,5 +1,3 @@
-# test_trainer.py
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytest

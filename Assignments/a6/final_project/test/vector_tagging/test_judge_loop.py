@@ -1,5 +1,3 @@
-# test_ehr_label_judge.py
-
 import json
 import numpy as np
 import pytest
