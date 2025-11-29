@@ -41,5 +41,5 @@ jobs:
       - name: Pytest coverage comment (PRs only)
         uses: MishaKav/pytest-coverage-comment@v1
         with:
-          pytest-coverage-path: health_forge/Assignments/a6/final_project/pytest-coverage.txt
-          junitxml-path: health_forge/Assignments/a6/final_project/pytest.xml
+          pytest-coverage-path: Assignments/a6/final_project/pytest-coverage.txt
+          junitxml-path: Assignments/a6/final_project/pytest.xml
