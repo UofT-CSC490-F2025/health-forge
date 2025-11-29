@@ -49,6 +49,7 @@ jobs:
           hide-comment: true
 
       - name: Inject coverage HTML into README
+        working-directory: .
         run: |
           python - << 'EOF'
           from pathlib import Path
