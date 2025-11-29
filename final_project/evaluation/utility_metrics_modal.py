@@ -66,11 +66,23 @@ def run():
     column_labels = download_column_labels(s3, BUCKET, COL_LABEL_FILE)
 
     # -----------------------------
-    # Normalize age
+    # Normalize continuous columns
     # -----------------------------
     AGE_IDX = 1
+    ADM_IDX = 3
+
+    # Normalize by max value
     real_train[:, AGE_IDX] = real_train[:, AGE_IDX] / 91.0
     real_test[:, AGE_IDX]  = real_test[:, AGE_IDX]  / 91.0
+
+    real_train[:, ADM_IDX] = real_train[:, ADM_IDX] / 238.0
+    real_test[:, ADM_IDX]  = real_test[:, ADM_IDX]  / 238.0
+
+    # -----------------------------
+    # Identify binary columns for F1
+    # -----------------------------
+    # A column is binary if it contains only 0/1 in the real train set
+    binary_cols = [i for i in range(real_train.shape[1]) if set(np.unique(real_train[:, i])) <= {0, 1}]
 
     log(f"Original real train shape: {real_train.shape}")
     log(f"Original real test shape: {real_test.shape}")
@@ -157,6 +169,8 @@ def run():
         f1_synth = []
 
         for idx in top_entropy_idx:
+            if idx not in binary_cols:
+                continue
             y_real = full_real[:, idx]
             X_real = np.delete(full_real, idx, axis=1)
             y_synth = synth_sample[:, idx]

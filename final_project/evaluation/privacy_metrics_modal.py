@@ -43,7 +43,7 @@ def download_column_labels(s3, bucket, key):
 # -----------------------------
 def attribute_inference_f1(real_train, synthetic, known_idx, unknown_idx, k=5, n_bootstrap=5):
     f1_list = []
-    
+
     for b in range(n_bootstrap):
         # Subsample synthetic rows for this bootstrap
         syn_sample = synthetic[np.random.choice(synthetic.shape[0], real_train.shape[0], replace=True)]
@@ -136,20 +136,32 @@ def run():
     synthetic  = download_s3_file(s3, BUCKET, SYNTH_FILE, f"/tmp/{SYNTH_FILE}")
     column_labels = download_column_labels(s3, BUCKET, COL_LABEL_FILE)
 
-    # ---------------------------
-    # Normalize age column
-    # ---------------------------
-    AGE_IDX = 1  # change to actual age column index
+    # -----------------------------
+    # Normalize continuous columns
+    # -----------------------------
+    AGE_IDX = 1
+    ADM_IDX = 3
+
+    # Normalize by max value
     real_train[:, AGE_IDX] = real_train[:, AGE_IDX] / 91.0
     real_test[:, AGE_IDX]  = real_test[:, AGE_IDX]  / 91.0
+
+    real_train[:, ADM_IDX] = real_train[:, ADM_IDX] / 238.0
+    real_test[:, ADM_IDX]  = real_test[:, ADM_IDX]  / 238.0
+
+    # -----------------------------
+    # Identify binary columns for F1
+    # -----------------------------
+    # A column is binary if it contains only 0/1 in the real train set
+    binary_cols = [i for i in range(real_train.shape[1]) if set(np.unique(real_train[:, i])) <= {0, 1}]
 
     log(f"Real train shape: {real_train.shape}")
     log(f"Real test shape: {real_test.shape}")
     log(f"Synthetic shape: {synthetic.shape}")
 
     # Subsample 1/10 of the train and test sets
-    train_size = real_train.shape[0] // 10
-    test_size  = real_test.shape[0]  // 10
+    train_size = real_train.shape[0] // 100
+    test_size  = real_test.shape[0]  // 100
 
     train_indices = np.random.choice(real_train.shape[0], train_size, replace=False)
     test_indices  = np.random.choice(real_test.shape[0],  test_size,  replace=False)
@@ -164,11 +176,12 @@ def run():
     # -----------------------------
     # Compute high-entropy known features
     # -----------------------------
+    p = real_train[:, binary_cols].mean(axis=0)
     p = real_train.mean(axis=0)
     p = np.clip(p, 0, 1)
     entropy = -p * np.log2(p + 1e-12) - (1 - p) * np.log2(1 - p + 1e-12)
     known_idx = np.argsort(-entropy)[:256]  # top 256 high-entropy features
-    unknown_idx = np.array([i for i in range(real_train.shape[1]) if i not in known_idx])
+    binary_unknown_idx = [i for i in range(real_train.shape[1]) if i not in known_idx and i in binary_cols]
 
     # Map top high-entropy indices to column labels
     high_entropy_labels = [column_labels[i] for i in known_idx[:10]]
@@ -182,7 +195,7 @@ def run():
 
     for i in range(N_REPEATS):
         log(f"Bootstrap repeat {i+1}/{N_REPEATS}")
-        attr_f1 = attribute_inference_f1(real_train, synthetic, known_idx, unknown_idx)
+        attr_f1 = attribute_inference_f1(real_train, synthetic, known_idx, binary_unknown_idx)
         memb_f1 = membership_inference_f1(real_train, real_test, synthetic)
         attr_f1_list.append(attr_f1)
         memb_f1_list.append(memb_f1)
