@@ -8,6 +8,10 @@ on:
     branches:
       - A6
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -39,7 +43,6 @@ jobs:
             test/ | tee pytest-coverage.txt
 
       - name: Pytest coverage comment (PRs only)
-        if: github.event_name == 'pull_request'
         uses: MishaKav/pytest-coverage-comment@v1
         with:
           pytest-coverage-path: Assignments/a6/final_project/pytest-coverage.txt
