@@ -6,7 +6,7 @@ on:
       - A6
   pull_request:
     branches:
-      - main
+      - main   # <-- base branch of your PRs
 
 permissions:
   contents: read
