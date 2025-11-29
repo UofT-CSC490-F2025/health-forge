@@ -6,7 +6,7 @@ on:
       - A6
   pull_request:
     branches:
-      - A6
+      - main   # <-- base branch of your PRs
 
 permissions:
   contents: read
@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -43,6 +45,7 @@ jobs:
             test/ | tee pytest-coverage.txt
 
       - name: Pytest coverage comment (PRs only)
+        if: github.event_name == 'pull_request'
         uses: MishaKav/pytest-coverage-comment@v1
         with:
           pytest-coverage-path: Assignments/a6/final_project/pytest-coverage.txt
