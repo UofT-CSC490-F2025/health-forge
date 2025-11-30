@@ -15,10 +15,17 @@ class DiffusionModel(Module):
         num_heads = cfg["num_heads"]
         dropout = cfg["dropout"]
         use_attention = cfg["use_attention"]
-
+        
+        self.lambda_mlp = Sequential(
+            Linear(1, hidden_dim),
+            SiLU(),
+            Linear(hidden_dim, hidden_dim)
+        )
 
         # Input projection
         self.input_proj = Linear(input_dim, hidden_dim)
+        self.layer_norm = LayerNorm(hidden_dim)
+
         
         # Main blocks
         self.blocks = torch.nn.ModuleList()  # Use ModuleList instead of []
@@ -35,20 +42,23 @@ class DiffusionModel(Module):
         )
     
     
-    def forward(self, x, text_embed):
+    def forward(self, x, text_embed, lambda_val):
         # x: [B, D] - batch of 1D vectors
         # text_embed: [B, T] - Batch of 1D vectors for text embeddings
                 
         # Project input
         h = self.input_proj(x)  # [B, hidden_dim]
+        lambda_embed = self.lambda_mlp(lambda_val)
+        h = h + lambda_embed
+        h = self.layer_norm(h)
+
+
         
         # Process through blocks
         for block in self.blocks:
-            # TODO: CROSS ATTENTION WITH TEXT EMBEDDING
-            h = block(h, text_embed)
+            h = block(h, text_embed)  # Can optionally pass t_emb to blocks
         
-        # Output
-        return self.output(h)  # [B, input_dim]
+        return self.output(h)
 
 
 class MLPBlock(Module):

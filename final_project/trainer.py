@@ -28,11 +28,12 @@ class DiffusionTrainer:
         self.train_loader = train_loader
         self.test_loader = test_loader
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
         self.criterion = nn.MSELoss()
 
         # Use gradient scaler for AMP
         self.scaler = torch.amp.GradScaler('cuda', enabled=(self.device.startswith("cuda")))
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 25, gamma=0.5)
 
         self.train_losses = []
         self.val_losses = []
@@ -43,17 +44,20 @@ class DiffusionTrainer:
         total_loss = 0
 
         # tqdm on the dataloader
-        for z_l, text_embed, epsilon_true in tqdm(self.train_loader, desc='Training', leave=False):
+        for z_l, text_embed, l, epsilon_true in tqdm(self.train_loader, desc='Training', leave=False):
             # Move batch to same device as model
             z_l = z_l.to(self.device, non_blocking=True)
             text_embed = text_embed.to(self.device, non_blocking=True)
             epsilon_true = epsilon_true.to(self.device, non_blocking=True)
+            l = l.to(self.device, dtype=torch.float, non_blocking=True)
+            l = l.unsqueeze(-1)
+
 
             self.optimizer.zero_grad()
 
             # Mixed precision forward/backward
             with torch.cuda.amp.autocast(enabled=(self.device.startswith("cuda"))):
-                epsilon_pred = self.model(z_l, text_embed)
+                epsilon_pred = self.model(z_l, text_embed, l)
                 loss = self.criterion(epsilon_pred, epsilon_true)
 
             # Scaled backward
@@ -84,13 +88,16 @@ class DiffusionTrainer:
 
         device = self.device
         with torch.no_grad():
-            for z_l, text_embed, epsilon_true in tqdm(self.test_loader, desc='Validation', leave=False):
+            for z_l, text_embed, l, epsilon_true in tqdm(self.test_loader, desc='Validation', leave=False):
                 z_l = z_l.to(device, non_blocking=True)
                 text_embed = text_embed.to(device, non_blocking=True)
                 epsilon_true = epsilon_true.to(device, non_blocking=True)
+                l = l.to(self.device, dtype=torch.float, non_blocking=True)
+                l = l.unsqueeze(-1)
+
 
                 with torch.cuda.amp.autocast(enabled=(device.startswith("cuda"))):
-                    epsilon_pred = self.model(z_l, text_embed)
+                    epsilon_pred = self.model(z_l, text_embed, l)
                     loss = self.criterion(epsilon_pred, epsilon_true)
 
                 total_loss += loss.item()
@@ -102,12 +109,13 @@ class DiffusionTrainer:
     def train(self):
         """Train the model for multiple epochs"""
         best_val_loss = float('inf')
-
         for epoch in range(self.num_epochs):
             print(f'\nEpoch {epoch + 1}/{self.num_epochs}')
 
             train_loss = self.train_epoch()
             val_loss = self.validate()
+            self.lr_scheduler.step()
+
             curr_lr = self.optimizer.param_groups[0]['lr']
 
             print(f'Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f} | LR: {curr_lr:.6f}')

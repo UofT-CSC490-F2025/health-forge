@@ -10,7 +10,7 @@ from sample import sample_from_checkpoint
 # CONFIG
 # ---------------------------
 BUCKET = "healthforge-final-bucket"
-MODEL_OUTPUT_KEY = "results/best_diffusion_model.pt"
+MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l.pt"
 SAMPLE_OUTPUT_KEY = "results/sample_output.npy"
 
 # ---------------------------
@@ -43,8 +43,8 @@ aws_secret = modal.Secret.from_name("aws-secret")
 # SAMPLING FUNCTION
 # ============================================================
 @app.function(
-    gpu="A100",
-    timeout=2 * 60 * 60,
+    gpu="H100",
+    timeout=4 * 60 * 60,
     image=image,
     secrets=[aws_secret],
 )

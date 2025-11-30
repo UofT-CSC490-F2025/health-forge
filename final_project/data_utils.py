@@ -49,7 +49,10 @@ class DiffusionDataset(Dataset):
         epsilon = torch.randn_like(x)
         z_l = signal_coeff * x + noise_coeff * epsilon
 
-        return z_l, text_embed, epsilon
+        lambda_scaled = math.tanh(l / 40.0) # TODO: Replace with lambda_max - lambda_min
+
+
+        return z_l, text_embed, lambda_scaled, epsilon
 
 
 def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
@@ -82,6 +85,7 @@ def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     train_dataset = DiffusionDataset(train_data, train_embeds, T, noise_a, noise_b, embed_drop_prob, device)
     test_dataset = DiffusionDataset(test_data, test_embeds, T, noise_a, noise_b, embed_drop_prob, device)
 
+    print(f"Train samples: {len(train_dataset)} | Val samples: {len(test_dataset)}")
     # DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)

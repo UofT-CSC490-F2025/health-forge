@@ -5,16 +5,24 @@ from data_utils import prepare_diffusion_dataloaders
 import yaml
 import pickle
 import argparse
+import numpy as np
 
-def train_from_pkl(cfg, pkl_path, save_path="best_diffusion_model.pt"):
+def train_from_pkl(cfg, samples, text_embeds, save_path="best_diffusion_model.pt", resume_ckpt=None):
     """Train using a pickle file containing samples and text embeddings"""
+    samples = torch.from_numpy(samples)
+    oldest_age = torch.max(samples[:, 1])
+    max_admissions = torch.max(samples[:, 3])
+    samples[:, 1] = samples[:, 1] / oldest_age
+    samples[:, 3] = samples[:, 3] / max_admissions
+    samples = (samples * 2) - 1
+    assert (samples.max() <= 1.0) and (samples.min() >= -1.0), "Samples are not in a normalized range"
+    text_embeds = torch.from_numpy(text_embeds)
+    print(f"Oldest age: {oldest_age}")
+    print(f"Max admissions: {max_admissions}")
+    print(f"SAMPLES SHAPE {samples.shape} | TEXT EMBEDS SHAPE {text_embeds.shape}")
+    print(f"SAMPLE EXAMPLE: {samples[0]}")
+    print(f"EMBED EXAMPLE: {text_embeds[0]}")
 
-    # Load data from pickle
-    with open(pkl_path, "rb") as f:
-        data = pickle.load(f)
-
-    samples = data["samples"]
-    text_embeds = data["text_embeds"]
 
     assert samples.shape[0] == text_embeds.shape[0], "Mismatch between samples and text embeddings"
 
@@ -24,9 +32,6 @@ def train_from_pkl(cfg, pkl_path, save_path="best_diffusion_model.pt"):
         samples = samples[:num_samples]
         text_embeds = text_embeds[:num_samples]
 
-    # Scale data from 0-1 to -1..1 if needed
-    if cfg.get("data_scale_from_zero_one", True):
-        samples = (samples * 2) - 1
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Training on device: {device}")
@@ -47,6 +52,9 @@ def train_from_pkl(cfg, pkl_path, save_path="best_diffusion_model.pt"):
         cfg=cfg["trainer"],
         device=device
     )
+
+    if resume_ckpt is not None:
+        trainer.load_checkpoint(resume_ckpt)
 
     # Train
     train_losses, val_losses = trainer.train()

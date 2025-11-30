@@ -18,9 +18,9 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
     # if text_desc is None:
     #     text_desc = "A 62 year old female individual who has recently completed her journey through life without major health issues"
-    text_desc = "male with diabetes and cancer and depression"
+    text_desc = "This is a young male who is married and asian"
 
-    embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    embed_model = SentenceTransformer("sentence-transformers/embeddinggemma-300m-medical")
     text_embed = embed_model.encode([text_desc])
     text_embed = torch.from_numpy(text_embed).to(device=device)
 
@@ -28,6 +28,8 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
     model = DiffusionModel(cfg["model"])
     checkpoint = torch.load(checkpoint_path, map_location=device)
+    # checkpoint = torch.load("best_diffusion_model_truedata_4096h_3l.pt", map_location=device)
+
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     model.to(device=device)
@@ -36,24 +38,37 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     z_t = z_t.to(device=device)
     empty_embed = text_embed * 0
 
+    noise_b = math.atan(math.exp(-lambda_max / 2))
+    noise_a = math.atan(math.exp(-lambda_min / 2)) - noise_b
 
     lambda_schedule = torch.linspace(lambda_min, lambda_max, T)
     with torch.no_grad():
-        for t in tqdm(range(T)):
-            l = lambda_schedule[t]  # lambda
+        # for t in tqdm(range(T)):
+        for t in tqdm(reversed(range(T))):
+
+            # l = lambda_schedule[t]  # lambda
+            l = -2 * math.log(math.tan(noise_a * (t / T) + noise_b))
+
+            l_scaled = math.tanh(l / (lambda_max - lambda_min))
+            l_tensor = torch.full((z_t.shape[0], 1), l_scaled, device=device)
+
+
             signal_coeff = math.sqrt(1 / (1 + math.exp(-l)))      # alpha
             noise_coeff = math.sqrt(1 - (signal_coeff ** 2))        # sigma
 
-            cond_epsilon = model(z_t, text_embed)
-            uncond_epsilon = model(z_t, empty_embed)
+            cond_epsilon = model(z_t, text_embed, l_tensor)
+            uncond_epsilon = model(z_t, empty_embed, l_tensor)
 
 
             epsilon_pred = ((1 + guidance_scale) * cond_epsilon) - (guidance_scale * uncond_epsilon)
             x_t = (z_t - (noise_coeff * epsilon_pred)) / signal_coeff
             
-            if t < T - 1 :
+            # if t < T - 1 :
+            if t > 0:
                 # TODO: Algorithm 2: Line 5
-                l_next = lambda_schedule[t+1]
+                # l_next = lambda_schedule[t+1]
+                l_next = -2 * math.log(math.tan(noise_a * ((t-1) / T) + noise_b))
+
                 signal_coeff_next =  math.sqrt(1 / (1 + math.exp(-l_next)))         # alpha
                 noise_coeff_next = math.sqrt(1 - (signal_coeff_next ** 2))          # sigma
 
@@ -65,22 +80,23 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
                 var_bar = (1 - exp_diff) * (noise_coeff_next ** 2)
                 var = (1 - exp_diff) * (noise_coeff ** 2)
 
-
-                sigma = (var_bar ** (1 - var_interp_coeff)) * (var ** var_interp_coeff)
-                # sigma = max(sigma, 1e-10)  # Prevent numerical issues
+                sigma_squared = (var_bar ** (1 - var_interp_coeff)) * (var ** var_interp_coeff)
+                sigma = math.sqrt(sigma_squared)
 
                 sample = torch.randn_like(z_t).to(device=device)
                 z_t = (sigma * sample) + mu
 
             else:
-                z_t = x_t
+                # z_t = x_t
+                z_t = torch.tanh(x_t)
+
 
     z_t = (z_t + 1) / 2
 
     formatted_sample = z_t
     formatted_sample[:, 1] *= 100
     formatted_sample = formatted_sample.round()
-    print(formatted_sample)
+    print("GENERATED SAMPLE: ", formatted_sample)
 
     return formatted_sample.cpu().numpy()
 
