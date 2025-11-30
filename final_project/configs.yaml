@@ -19,7 +19,7 @@ data_utils:
 
 trainer:
   lr: 0.00001
-  num_epochs: 50
+  num_epochs: 25
   save_path: best_diffusion_model.pt
 
 sampler:

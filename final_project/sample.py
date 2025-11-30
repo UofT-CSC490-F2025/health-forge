@@ -6,6 +6,8 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
+MAX_AGE = 91
+MAX_ADMISSIONS = 238
 def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -16,9 +18,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     var_interp_coeff = cfg["sampler"]["var_interpolation_coeff"]
     text_embed_dim = cfg["model"]["text_embed_dim"]
 
-    # if text_desc is None:
-    #     text_desc = "A 62 year old female individual who has recently completed her journey through life without major health issues"
-    text_desc = "This is a young male who is married and asian"
+    text_desc = "female, married, dead, asian ethnicity"
 
     embed_model = SentenceTransformer("sentence-transformers/embeddinggemma-300m-medical")
     text_embed = embed_model.encode([text_desc])
@@ -34,7 +34,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     model.eval()
     model.to(device=device)
 
-    z_t = torch.randn((100, cfg["model"]["input_dim"]))
+    z_t = torch.randn((1000, cfg["model"]["input_dim"]))
     z_t = z_t.to(device=device)
     empty_embed = text_embed * 0
 
@@ -94,7 +94,9 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     z_t = (z_t + 1) / 2
 
     formatted_sample = z_t
-    formatted_sample[:, 1] *= 100
+    formatted_sample[:, 1] *= MAX_AGE
+    formatted_sample[:, 3] *= MAX_ADMISSIONS
+
     formatted_sample = formatted_sample.round()
     print("GENERATED SAMPLE: ", formatted_sample)
 

@@ -13,7 +13,7 @@ MERGED_KEY = "data/final_merged.pkl"
 DATA_KEY = "original_vectors_gemma.npy"
 EMBEDS_KEY = "vector_tag_embeddings_gemma.npy"
 
-MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l.pt"
+MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l_GLU.pt"
 
 RESUME = False
 
