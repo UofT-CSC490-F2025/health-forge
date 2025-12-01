@@ -10,7 +10,9 @@ from sample import sample_from_checkpoint
 # CONFIG
 # ---------------------------
 BUCKET = "healthforge-final-bucket"
-MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l.pt"
+# MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l.pt"
+MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l_GLU.pt"
+
 SAMPLE_OUTPUT_KEY = "results/sample_output.npy"
 
 # ---------------------------

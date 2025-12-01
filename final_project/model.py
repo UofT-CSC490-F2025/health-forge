@@ -1,7 +1,7 @@
 import torch
 from torch.nn.functional import scaled_dot_product_attention
 from torch.nn.functional import softmax
-from torch.nn import Linear, Sequential, SiLU, LayerNorm, Dropout, Module
+from torch.nn import Linear, Sequential, SiLU, LayerNorm, Dropout, Module, RMSNorm, Parameter
 
 import math 
 
@@ -24,20 +24,20 @@ class DiffusionModel(Module):
 
         # Input projection
         self.input_proj = Linear(input_dim, hidden_dim)
-        self.layer_norm = LayerNorm(hidden_dim)
+        self.layer_norm = RMSNorm(hidden_dim)
 
         
         # Main blocks
         self.blocks = torch.nn.ModuleList()  # Use ModuleList instead of []
         for _ in range(num_layers):
-            if use_attention:
-                self.blocks.append(TransformerBlock(hidden_dim, num_heads, dropout))
-            else:
-                self.blocks.append(MLPBlock(hidden_dim, text_embed_dim, dropout))
+            # self.blocks.append(TransformerBlock(hidden_dim, num_heads, dropout))
+            # self.blocks.append(MLPBlock(hidden_dim, text_embed_dim, dropout))
+            self.blocks.append(GLUBlock(hidden_dim, text_embed_dim, dropout))
+
         
         # Output projection
         self.output = Sequential(
-            LayerNorm(hidden_dim),
+            RMSNorm(hidden_dim),
             Linear(hidden_dim, input_dim)
         )
     
@@ -60,11 +60,63 @@ class DiffusionModel(Module):
         
         return self.output(h)
 
+class GLUBlock(Module):
+    def __init__(self, dim, text_embed_dim, dropout):
+        super().__init__()
+        # First GLU MLP
+        self.norm1 = RMSNorm(dim)
+        self.fc1 = Linear(dim, 4 * dim)
+        self.fc_gate1 = Linear(dim, 4 * dim)
+        self.fc_out1 = Linear(4 * dim, dim)
+        self.dropout1 = Dropout(dropout)
+        self.res_scale1 = Parameter(torch.tensor(1.0))
+
+        # Cross-attention on text embeddings
+        self.q_proj = Linear(dim, dim)
+        self.k_proj = Linear(text_embed_dim, dim)
+        self.v_proj = Linear(text_embed_dim, dim)
+        self.attn_norm = RMSNorm(dim)
+
+        # Second GLU MLP
+        self.norm2 = RMSNorm(dim)
+        self.fc2 = Linear(dim, 4 * dim)
+        self.fc_gate2 = Linear(dim, 4 * dim)
+        self.fc_out2 = Linear(4 * dim, dim)
+        self.dropout2 = Dropout(dropout)
+        self.res_scale2 = Parameter(torch.tensor(1.0))
+
+    def forward(self, x, text_embed):
+        # ----- 1) First GLU MLP -----
+        h = self.norm1(x)
+        gate1 = torch.sigmoid(self.fc_gate1(h))
+        h = self.fc1(h) * gate1          # GLU
+        h = self.fc_out1(h)
+        h = self.dropout1(h)
+        x = x + self.res_scale1 * h      # residual
+
+        # ----- 2) Cross-attention with text conditioning -----
+        q = self.q_proj(x)               # [B, D]
+        k = self.k_proj(text_embed)      # [B, T, D]
+        v = self.v_proj(text_embed)      # [B, T, D]
+
+        attn_out = scaled_dot_product_attention(q, k, v)
+        x = x + attn_out
+        x = self.attn_norm(x)
+
+        # ----- 3) Second GLU MLP -----
+        h = self.norm2(x)
+        gate2 = torch.sigmoid(self.fc_gate2(h))
+        h = self.fc2(h) * gate2
+        h = self.fc_out2(h)
+        h = self.dropout2(h)
+        x = x + self.res_scale2 * h
+
+        return x
 
 class MLPBlock(Module):
     def __init__(self, dim, text_embed_dim, dropout):
         super().__init__()
-        self.norm1 = LayerNorm(dim)
+        self.norm1 = RMSNorm(dim)
         self.mlp1 = Sequential(
             Linear(dim, 4 * dim),
             SiLU(),
@@ -76,9 +128,9 @@ class MLPBlock(Module):
         self.k_proj = Linear(text_embed_dim, dim)
         self.v_proj = Linear(text_embed_dim, dim)
 
-        self.attn_norm = LayerNorm(dim)
+        self.attn_norm = RMSNorm(dim)
         
-        self.norm2 = LayerNorm(dim)
+        self.norm2 = RMSNorm(dim)
         self.mlp2 = Sequential(
             Linear(dim, 4 * dim),
             SiLU(),
