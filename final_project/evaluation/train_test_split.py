@@ -29,7 +29,7 @@ def split_real_data_s3():
     # -----------------------------
     # Configuration
     # -----------------------------
-    BUCKET = "healthforge-final-bucket"
+    BUCKET = "healthforge-final-bucket-1"
 
     # Main patient embeddings
     REAL_FILE_KEY = "original_vectors_gemma.npy"

@@ -118,7 +118,7 @@ def membership_inference_f1(real_train, real_test, synthetic, n_bootstrap=5, max
     timeout=60 * 60 * 2,
 )
 def run():
-    BUCKET = "healthforge-final-bucket"
+    BUCKET = "healthforge-final-bucket-1"
     TRAIN_FILE = "original_vectors_train.npy"
     TEST_FILE  = "original_vectors_val.npy"
     SYNTH_FILE = "sample_output.npy"

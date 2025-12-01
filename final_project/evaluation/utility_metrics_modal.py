@@ -46,7 +46,7 @@ def download_column_labels(s3, bucket, key):
     timeout=60*60*2
 )
 def run():
-    BUCKET = "healthforge-final-bucket"
+    BUCKET = "healthforge-final-bucket-1"
     TRAIN_FILE = "original_vectors_train.npy"
     TEST_FILE  = "original_vectors_val.npy"
     SYNTH_FILE = "sample_output.npy"

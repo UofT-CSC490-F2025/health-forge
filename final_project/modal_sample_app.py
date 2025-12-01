@@ -9,10 +9,9 @@ from sample import sample_from_checkpoint
 # ---------------------------
 # CONFIG
 # ---------------------------
-BUCKET = "healthforge-final-bucket"
-# MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l.pt"
-MODEL_OUTPUT_KEY = "results/best_diffusion_model_truedata_4096h_3l_GLU.pt"
-
+BUCKET = "healthforge-final-bucket-1"
+MODEL_OUTPUT_KEY = "checkpoints/best_diffusion_model_truedata_4096h_3l_GLU.pt"
+PROMPT_FILE_KEY = "patient_text_prompts.txt"
 SAMPLE_OUTPUT_KEY = "results/sample_output.npy"
 
 # ---------------------------
@@ -50,10 +49,7 @@ aws_secret = modal.Secret.from_name("aws-secret")
     image=image,
     secrets=[aws_secret],
 )
-def sample_model(text_prompt: str = None):
-    """
-    Loads trained model and produces a sample, uploads output to S3.
-    """
+def sample_model():
     s3 = boto3.client("s3")
 
     # Load configs
@@ -66,8 +62,16 @@ def sample_model(text_prompt: str = None):
     s3.download_fileobj(BUCKET, MODEL_OUTPUT_KEY, model_tmp)
     model_tmp.close()
 
-    # Generate sample
-    output = sample_from_checkpoint(cfg, model_tmp.name, text_prompt)
+    # Download text prompts
+    prompt_tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+    s3.download_fileobj(BUCKET, PROMPT_FILE_KEY, prompt_tmp)
+    prompt_tmp.close()
+
+    with open(prompt_tmp.name, "r") as f:
+        prompts = [line.strip() for line in f if line.strip()]
+
+    # Generate samples
+    output = sample_from_checkpoint(cfg, model_tmp.name, prompts)
 
     # Save and upload output
     out_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False).name
@@ -76,6 +80,7 @@ def sample_model(text_prompt: str = None):
 
     os.unlink(model_tmp.name)
     os.unlink(out_tmp)
+    os.unlink(prompt_tmp.name)
 
     return {"status": "sampling_complete", "sample_s3_key": SAMPLE_OUTPUT_KEY}
 
@@ -86,7 +91,7 @@ def sample_model(text_prompt: str = None):
 @app.local_entrypoint()
 def main():
     print("Launching sampling on Modal GPU...")
-    sample_res = sample_model.remote("example description")
+    sample_res = sample_model.remote()
     print("Sampling submitted, result handle:", sample_res)
 
 
