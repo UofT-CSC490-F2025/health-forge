@@ -45,6 +45,7 @@ class DiffusionTrainer:
 
         # tqdm on the dataloader
         for z_l, text_embed, l, epsilon_true in tqdm(self.train_loader, desc='Training', leave=False):
+
             # Move batch to same device as model
             z_l = z_l.to(self.device, non_blocking=True)
             text_embed = text_embed.to(self.device, non_blocking=True)

@@ -1,11 +1,11 @@
 model:
-  input_dim: 1806
-  hidden_dim: 4096
+  input_dim: 1024
+  hidden_dim: 2048
   text_embed_dim: 768
-  num_layers: 3
-  num_heads: 8
+  num_layers: 6 # (3 → 6)
+  num_heads: 4 # safer for optional attention
   dropout: 0.2
-  use_attention: False
+  use_attention: True # leave off unless needed
 
 data_utils:
   test_split: 0.1
@@ -13,15 +13,19 @@ data_utils:
   lambda_min: -20
   lambda_max: 20
   embed_drop_prob: 0.05
-  schedule: 'linear'
+  schedule: "linear"
   num_workers: 8
   batch_size: 256
 
 trainer:
-  lr: 0.00001
-  num_epochs: 50
+  lr: 0.0002 # (instead of 1e-5)
+  lr_schedule: "cosine" # NEW
+  warmup_steps: 500 # NEW
+  ema_decay: 0.999 # NEW
+  ema_update_interval: 1 # NEW
+  num_epochs: 50 # (instead of 75)
   save_path: best_diffusion_model.pt
 
 sampler:
-  guidance_scale: 0.3
+  guidance_scale: 0.6 # (0.3 → 0.6 for stronger conditioning)
   var_interpolation_coeff: 0.1

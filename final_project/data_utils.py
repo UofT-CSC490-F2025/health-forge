@@ -51,7 +51,6 @@ class DiffusionDataset(Dataset):
 
         lambda_scaled = math.tanh(l / 40.0) # TODO: Replace with lambda_max - lambda_min
 
-
         return z_l, text_embed, lambda_scaled, epsilon
 
 

@@ -1,4 +1,7 @@
+import tempfile
+import boto3
 import torch
+from autoencoder import EHRLatentAutoencoder
 from model import DiffusionModel
 import yaml
 import math
@@ -16,12 +19,11 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     var_interp_coeff = cfg["sampler"]["var_interpolation_coeff"]
     text_embed_dim = cfg["model"]["text_embed_dim"]
 
-    # if text_desc is None:
-    #     text_desc = "A 62 year old female individual who has recently completed her journey through life without major health issues"
     text_desc = "This is a young male who is married and asian"
 
     embed_model = SentenceTransformer("sentence-transformers/embeddinggemma-300m-medical")
     text_embed = embed_model.encode([text_desc])
+    text_embed = text_embed / np.linalg.norm(text_embed, axis=1, keepdims=True)
     text_embed = torch.from_numpy(text_embed).to(device=device)
 
     assert text_embed.shape[-1] == text_embed_dim
@@ -87,18 +89,63 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
                 z_t = (sigma * sample) + mu
 
             else:
-                # z_t = x_t
-                z_t = torch.tanh(x_t)
+                z_t = x_t
 
 
-    z_t = (z_t + 1) / 2
+    print("z_t stats BEFORE denorm:", z_t.mean().item(), z_t.std().item())            
+    INPUT_DIM = 1806
+    LATENT_DIM = 1024
 
-    formatted_sample = z_t
-    formatted_sample[:, 1] *= 100
-    formatted_sample = formatted_sample.round()
-    print("GENERATED SAMPLE: ", formatted_sample)
+    autoencoder = EHRLatentAutoencoder(input_dim=INPUT_DIM, latent_dim=LATENT_DIM).to("cuda")
+    state_dict = torch.load("best_autoencoder_model.pt", map_location="cuda")
+   
+    autoencoder.load_state_dict(state_dict)
+    autoencoder.eval()
 
-    return formatted_sample.cpu().numpy()
+     # Freeze AE weights
+    for p in autoencoder.parameters():
+        p.requires_grad = False
+
+    print("Autoencoder loaded.")
+
+
+    latent_mean = np.load("latent_mean.npy")
+
+    latent_std = np.load("latent_std.npy")
+  
+    latent_mean = torch.from_numpy(latent_mean).to(device=z_t.device, dtype=z_t.dtype)
+    latent_std  = torch.from_numpy(latent_std).to(device=z_t.device, dtype=z_t.dtype)
+
+    print("Loading samples...")
+    
+    z_t = z_t * latent_std + latent_mean
+
+    print("z_t stats AFTER denorm:", z_t.mean().item(), z_t.std().item())
+
+    z_t = autoencoder.decoder(z_t)
+
+    print("decoder logits stats:", z_t.mean().item(), z_t.std().item())
+
+    cont_idx = [1, 3]
+    binary_idx = [i for i in range(1806) if i not in cont_idx]
+
+    temperature = 5.0   # try 2.0 to 5.0
+    threshold = 0.8     # try 0.6–0.9
+
+    probs = torch.sigmoid(z_t / temperature)
+    x_bin = (probs[:, binary_idx] > threshold).float()
+
+    MAX_ADMISSIONS = 238
+    MAX_AGE= 91
+    #    reconstruct full vector
+    formatted = probs.clone()
+    formatted[:, binary_idx] = x_bin
+
+    formatted[:, 1] = formatted[:, 1]*MAX_AGE
+    formatted[:, 3] = formatted[:, 3]*MAX_ADMISSIONS
+    print("GENERATED SAMPLE: ", formatted)
+
+    return formatted.cpu().numpy()
 
 if __name__ == "__main__":
     import argparse
@@ -111,5 +158,13 @@ if __name__ == "__main__":
     with open(args.cfg_path) as f:
         cfg = yaml.safe_load(f)
 
-    out = sample_from_checkpoint(cfg, args.ckpt_path)
+    out = sample_from_checkpoint(cfg, args.ckpt_path, "diabetes")
     print(out)
+
+   
+    count = 0
+    for row in out:
+        print(row[367 : 372])
+        print(np.sum(row >= 1.0))
+
+    print(count)

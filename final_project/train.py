@@ -9,16 +9,17 @@ import numpy as np
 
 def train_from_pkl(cfg, samples, text_embeds, save_path="best_diffusion_model.pt", resume_ckpt=None):
     """Train using a pickle file containing samples and text embeddings"""
-    samples = torch.from_numpy(samples)
-    oldest_age = torch.max(samples[:, 1])
-    max_admissions = torch.max(samples[:, 3])
-    samples[:, 1] = samples[:, 1] / oldest_age
-    samples[:, 3] = samples[:, 3] / max_admissions
-    samples = (samples * 2) - 1
-    assert (samples.max() <= 1.0) and (samples.min() >= -1.0), "Samples are not in a normalized range"
+    # SKIP NORMALIZATION FOR NOW
+    # samples = torch.from_numpy(samples)
+    # oldest_age = torch.max(samples[:, 1])
+    # max_admissions = torch.max(samples[:, 3])
+    # samples[:, 1] = samples[:, 1] / oldest_age
+    # samples[:, 3] = samples[:, 3] / max_admissions
+    # samples = (samples * 2) - 1
+    # assert (samples.max() <= 1.0) and (samples.min() >= -1.0), "Samples are not in a normalized range"
     text_embeds = torch.from_numpy(text_embeds)
-    print(f"Oldest age: {oldest_age}")
-    print(f"Max admissions: {max_admissions}")
+    # print(f"Oldest age: {oldest_age}")
+    # print(f"Max admissions: {max_admissions}")
     print(f"SAMPLES SHAPE {samples.shape} | TEXT EMBEDS SHAPE {text_embeds.shape}")
     print(f"SAMPLE EXAMPLE: {samples[0]}")
     print(f"EMBED EXAMPLE: {text_embeds[0]}")
