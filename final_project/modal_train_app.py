@@ -9,17 +9,16 @@ import numpy as np
 # CONFIG
 # ---------------------------
 BUCKET = "healthforge-final-bucket-1"
-MERGED_KEY = "data/final_merged.pkl"
 DATA_KEY = "original_vectors_gemma.npy"
 EMBEDS_KEY = "vector_tag_embeddings_gemma.npy"
 
-MODEL_OUTPUT_KEY = "results/best_diffusion_model_WITH_ENCODER.pt"
+MODEL_OUTPUT_KEY = "results/best_diffusion_model_WITH_ENCODER_BIG.pt"
 
 AUTOENCODER_KEY = "autoencoder/best_autoencoder_model.pt"
 
-LATENT_MEAN_KEY = "results/latent_mean.npy"
+LATENT_MEAN_KEY = "results/latent_mean_BIG.npy"
 
-LATENT_STD_KEY = "results/latent_std.npy"
+LATENT_STD_KEY = "results/latent_std_BIG.npy"
 
 RESUME = False
 
@@ -119,7 +118,7 @@ def train_worker():
 
 
     #Normalize text embedding
-    norms = text_embeds.norm(dim=1, keepdim=True) + 1e-8
+    norms = np.linalg.norm(text_embeds, axis=1, keepdims=True) + 1e-8
     text_embeds = text_embeds / norms
 
     B = 2048  # batch size

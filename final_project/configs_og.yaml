@@ -1,8 +1,8 @@
 model:
   input_dim: 1024
-  hidden_dim: 4096
+  hidden_dim: 2048
   text_embed_dim: 768
-  num_layers: 8
+  num_layers: 6 # (3 → 6)
   num_heads: 8 # safer for optional attention
   dropout: 0.2
   use_attention: True # leave off unless needed
@@ -15,7 +15,7 @@ data_utils:
   embed_drop_prob: 0.05
   schedule: "linear"
   num_workers: 8
-  batch_size: 512
+  batch_size: 256
 
 trainer:
   lr: 0.0002 # (instead of 1e-5)
@@ -23,7 +23,7 @@ trainer:
   warmup_steps: 500 # NEW
   ema_decay: 0.999 # NEW
   ema_update_interval: 1 # NEW
-  num_epochs: 512
+  num_epochs: 200
   save_path: best_diffusion_model.pt
 
 sampler:

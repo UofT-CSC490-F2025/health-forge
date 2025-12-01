@@ -19,7 +19,9 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     var_interp_coeff = cfg["sampler"]["var_interpolation_coeff"]
     text_embed_dim = cfg["model"]["text_embed_dim"]
 
-    text_desc = "This is a young male who is married and asian"
+    if text_desc == None:
+        print("Using Default")
+        text_desc = "This is a young male who is married and asian"
 
     embed_model = SentenceTransformer("sentence-transformers/embeddinggemma-300m-medical")
     text_embed = embed_model.encode([text_desc])
@@ -28,9 +30,10 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
     assert text_embed.shape[-1] == text_embed_dim
 
+    text_embed = text_embed.repeat(100, 1)  
+
     model = DiffusionModel(cfg["model"])
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    # checkpoint = torch.load("best_diffusion_model_truedata_4096h_3l.pt", map_location=device)
 
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -102,12 +105,14 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     autoencoder.load_state_dict(state_dict)
     autoencoder.eval()
 
+
+
+
      # Freeze AE weights
     for p in autoencoder.parameters():
         p.requires_grad = False
 
     print("Autoencoder loaded.")
-
 
     latent_mean = np.load("latent_mean.npy")
 
@@ -116,33 +121,35 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     latent_mean = torch.from_numpy(latent_mean).to(device=z_t.device, dtype=z_t.dtype)
     latent_std  = torch.from_numpy(latent_std).to(device=z_t.device, dtype=z_t.dtype)
 
+    z_t = z_t*latent_std + latent_mean
+
     print("Loading samples...")
     
-    z_t = z_t * latent_std + latent_mean
+    print(z_t)
+    
+    MAX_ADMISSIONS = 238
+    MAX_AGE= 91
 
-    print("z_t stats AFTER denorm:", z_t.mean().item(), z_t.std().item())
+    logits = autoencoder.decoder(z_t)
 
-    z_t = autoencoder.decoder(z_t)
-
-    print("decoder logits stats:", z_t.mean().item(), z_t.std().item())
+    probs = torch.sigmoid(logits)
 
     cont_idx = [1, 3]
     binary_idx = [i for i in range(1806) if i not in cont_idx]
 
-    temperature = 5.0   # try 2.0 to 5.0
-    threshold = 0.8     # try 0.6–0.9
-
-    probs = torch.sigmoid(z_t / temperature)
-    x_bin = (probs[:, binary_idx] > threshold).float()
-
-    MAX_ADMISSIONS = 238
-    MAX_AGE= 91
-    #    reconstruct full vector
+    # Start from probs (safe for binary)
     formatted = probs.clone()
-    formatted[:, binary_idx] = x_bin
 
-    formatted[:, 1] = formatted[:, 1]*MAX_AGE
-    formatted[:, 3] = formatted[:, 3]*MAX_ADMISSIONS
+    # 1. Hard threshold binary dims
+    formatted[:, binary_idx] = (probs[:, binary_idx] > 0.5).float()
+
+    # 2. Continuous dims should use raw decoder output, not sigmoid!
+    formatted[:, cont_idx] = logits[:, cont_idx].clamp(0, 1)
+
+    # 3. Denormalize continuous values
+   
+    formatted[:, 1] *= MAX_AGE
+    formatted[:, 3] *= MAX_ADMISSIONS
     print("GENERATED SAMPLE: ", formatted)
 
     return formatted.cpu().numpy()
@@ -158,13 +165,15 @@ if __name__ == "__main__":
     with open(args.cfg_path) as f:
         cfg = yaml.safe_load(f)
 
-    out = sample_from_checkpoint(cfg, args.ckpt_path, "diabetes")
+    out = sample_from_checkpoint(cfg, args.ckpt_path, "middle aged male with diabetes")
     print(out)
 
    
     count = 0
     for row in out:
-        print(row[367 : 372])
-        print(np.sum(row >= 1.0))
-
+        print(row[0:3])
+        diabetes = row[367 : 371]
+        if (diabetes == 1.0).any():
+            count+=1
+    
     print(count)
