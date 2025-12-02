@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 ### 2. Upload training data and the autoencoder model to S3
 
-- Training data used in this project can be downloaded here: **(Google Drive link)**
+- Training data used in this project can be downloaded here: https://drive.google.com/file/d/1JfUhMCgSzXCtnPw4pvrW3EqxwwzplF7-/view?usp=sharing
 - **Important:** The dataset is derived from MIMIC-IV. Please follow the MIMIC license requirements and cite the original dataset.
 
 ### 3. Configure your model
