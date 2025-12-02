@@ -1,4 +1,12 @@
---extra-index-url https://download.pytorch.org/whl/cu121
+boto3
+modal
+numpy
+pandas
+psycopg2
+pytest
+PyYAML
+sentence_transformers
 torch
+tqdm
 transformers
-accelerate
+pytest-cov

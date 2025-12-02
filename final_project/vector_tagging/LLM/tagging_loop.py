@@ -2,7 +2,9 @@ import csv
 import modal
 import logging
 import numpy as np
-from vector_tagger import BioMistralVectorTagger
+import boto3
+
+from final_project.vector_tagging.LLM.vector_tagger import BioMistralVectorTagger
 
 BUCKET_NAME = "healthforge-final-bucket"
 S3_BATCH_PREFIX = "vector_batches/"
@@ -75,6 +77,17 @@ def batch_worker(vector_batch: np.ndarray, batch_index: int, definition_array: n
     ],)
 
 def tag_ehr_vectors():
+    """
+    Process and tag EHR vectors in batches and upload results to S3.
+
+    Downloads training vectors and a vector-definition file from S3, splits
+    the vectors into batches, and processes each batch through remote workers
+    (throttled by NUM_WORKERS). Aggregates the returned original vectors,
+    tags, and tag embeddings, saves them locally, and re-uploads them to S3.
+
+    Returns:
+        None. Outputs are written as NumPy arrays to S3.
+    """
     import boto3
     import os
     import time

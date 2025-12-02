@@ -4,14 +4,30 @@ from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, pipelin
 import numpy as np
 
 class BioMistralVectorTagger:
+    """
+    Tag EHR vectors using BioMistral for clinical text generation and BERT for text encoding.
 
+    Loads a BioMistral causal-LM pipeline for generating clinical summaries and a BERT
+    encoder for embedding text. Accepts vector-definition metadata and provides helpers
+    for converting vectors to text, generating summaries, and computing embeddings.
+    """
     model = None
     pipeline = None
     vector_definitions: np.ndarray = None
     encoder = None
     bert_tokenizer = None
     def __init__(self, vector_definitions: List[str]):
+        """
+        Initialize the vector tagger with vector-definition labels and load all models.
 
+        Loads:
+            - BioMistral-7B for clinical text generation.
+            - A BERT encoder for text embedding.
+            - Tokenizers for both models.
+
+        Args:
+            vector_definitions (List[str]): Ordered labels describing each vector dimension.
+        """
         print("--------------------------------------------")
         print(f"Checking for LLM CUDA availability")
         print(f"Cuda Availability: {torch.cuda.is_available()}")
@@ -69,6 +85,18 @@ class BioMistralVectorTagger:
         
 
     def encode_text(self, text_batch: List[str]) -> np.ndarray:
+        """
+        Encode a batch of text strings into dense BERT embeddings.
+
+        Performs tokenization, forwards the batch through the BERT encoder, and applies
+        mean-pooling over token embeddings.
+
+        Args:
+            text_batch (List[str]): List of text inputs.
+
+        Returns:
+            np.ndarray: Array of shape (batch_size, hidden_size) containing embeddings.
+        """
         encoded = self.bert_tokenizer(
             text_batch,
             padding=True,          # pad to longest in the batch
@@ -89,6 +117,18 @@ class BioMistralVectorTagger:
         return emb.detach().cpu().numpy()
     
     def format_vector_full(self, vec): # Testable
+        """
+        Convert a structured EHR vector into a human-readable textual description.
+
+        Maps demographic values, categorical indicators, and diagnosis flags into a
+        formatted text block used as input to the LLM.
+
+        Args:
+            vec (np.ndarray): Single feature vector.
+
+        Returns:
+            str: Multi-line text description of the patient.
+        """
         txt = "Patient Facts: \n"
 
         gender_value = int(vec[0])
@@ -126,8 +166,17 @@ class BioMistralVectorTagger:
     
     def tag_vectors(self, vector_batch: np.ndarray) -> List[List]: #Test shape
         """
-        vector_batch: shape (batch_size, n_features)
-        returns: list of [vector, summary] pairs, length = batch_size
+        Summarize a batch of EHR vectors using rule-based logic or BioMistral generation.
+
+        For each vector:
+            - If no diagnoses are present, produces a deterministic template summary.
+            - Otherwise, constructs an LLM prompt and performs batched generation.
+
+        Args:
+            vector_batch (np.ndarray): Array of shape (batch_size, n_features).
+
+        Returns:
+            List[List]: One entry per patient: [original_vector, generated_summary].
         """
 
         # Will store summaries in order (some from templates, some from LLM)
@@ -182,30 +231,30 @@ class BioMistralVectorTagger:
                 {
                     "role": "user",
                     "content": f"""
-    You are a clinical summarization assistant.
+                        You are a clinical summarization assistant.
 
-    You will be given structured information about a single patient, including
-    basic demographics and a list of past diagnoses.
+                        You will be given structured information about a single patient, including
+                        basic demographics and a list of past diagnoses.
 
-    All of the information in the patient description is factual and should be
-    treated as correct. Do not contradict it.
+                        All of the information in the patient description is factual and should be
+                        treated as correct. Do not contradict it.
 
-    TASK:
-    - Write EXACTLY ONE concise clinical sentence.
-    - Summarize the patient in natural language, focusing on:
-    - age and gender (if provided),
-    - major diagnoses,
-    - important comorbidities.
-    - You may group related diagnoses into broader clinical concepts.
-    - Do NOT invent diagnoses that are not implied by the given information.
-    - Do NOT mention raw lists, bullet points, or code-like text.
-    - Do NOT explain your reasoning or add extra commentary.
-    - Your output MUST be a single sentence ending with a period.
+                        TASK:
+                        - Write EXACTLY ONE concise clinical sentence.
+                        - Summarize the patient in natural language, focusing on:
+                        - age and gender (if provided),
+                        - major diagnoses,
+                        - important comorbidities.
+                        - You may group related diagnoses into broader clinical concepts.
+                        - Do NOT invent diagnoses that are not implied by the given information.
+                        - Do NOT mention raw lists, bullet points, or code-like text.
+                        - Do NOT explain your reasoning or add extra commentary.
+                        - Your output MUST be a single sentence ending with a period.
 
-    Here is the patient description:
+                        Here is the patient description:
 
-    {vector_mapping}
-    """
+                        {vector_mapping}
+                        """
                 }
             ]
 
@@ -267,7 +316,8 @@ class BioMistralVectorTagger:
         
 if __name__== '__main__':
     bio = BioMistralVectorTagger(np.array(['age']))
-    res = bio.tag_vectors(np.array([[69.0], [67.0], [7.0]]))
-    print(res)
-    print(bio.encode_text([res[i][1] for i in range(0, len(res))]))
+    embeddings = bio.encode_text(("african american male with diabetes", "black man with a disease also known as diabetes", "white female healthy", "chinese female with diabetes"))
+
+    similarity = np.array([np.dot(embeddings[0], embeddings[1]), np.dot(embeddings[0], embeddings[2]), np.dot(embeddings[0], embeddings[3])])
+    print((similarity - similarity.min()) / (similarity.max() - similarity.min()))
 

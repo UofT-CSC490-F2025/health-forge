@@ -3,10 +3,10 @@ name: Run tests for final_project
 on:
   push:
     branches:
-      - A6
+      - model-conditional-modal-ryan
   pull_request:
     branches:
-      - main   # <-- base branch of your PRs
+      - main # <-- base branch of your PRs
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: Assignments/a6/final_project
+        working-directory: final_project
 
     steps:
       - name: Checkout repository
@@ -48,5 +48,5 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: MishaKav/pytest-coverage-comment@v1
         with:
-          pytest-coverage-path: Assignments/a6/final_project/pytest-coverage.txt
-          junitxml-path: Assignments/a6/final_project/pytest.xml
+          pytest-coverage-path: final_project/pytest-coverage.txt
+          junitxml-path: final_project/pytest.xml
