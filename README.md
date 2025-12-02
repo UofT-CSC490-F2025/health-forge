@@ -6,7 +6,7 @@ The link to the report documenting the architecture, problem statement, and use 
 
 The training for this project was done exclusively using Modal with the training data and results being stored on an AWS S3 instance.
 
-The main training loop function (train_from_pkl) located in healthforge/final_project/train.py, is designed to take the config, initialized model, training data, text embeddings, and paths to the trained autoencoder (see docstring for more details). It can be run completely locally, however the script to initiate the model and download the necessary files are not included in this repository.
+The main training loop function (train_from_pkl) located in healthforge/final_project/train.py, is designed to take the config, initialized model, training data, text embeddings, and paths to the trained autoencoder (see docstring for more details). It can be run completely locally, however the script to initiate the model and download the necessary files LOCALLY are not included in this repository.
 
 If you want to train using Modal and an S3 (recommended), here is how you can train and sample using our existing scripts.
 
