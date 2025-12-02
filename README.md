@@ -13,6 +13,44 @@ If you want to train using Modal and S3 (recommended), follow the steps below.
 
 ---
 
+## Directory Overview
+
+The following is a visual aid to understanding the tree directory structure of HealthForge's final project folder.
+```
+.
+├── autoencoder.py
+├── configs_small.yaml
+├── configs.yaml
+├── data_processing
+│   ├── EHR_data_processing_modal_final.py
+│   ├── export_column_labels.py
+│   └── merge_batch_vector.py
+├── data_utils.py
+├── evaluation
+│   ├── conditional_metrics_modal.py
+│   ├── privacy_metrics_modal.py
+│   ├── train_test_split.py
+│   └── utility_metrics_modal.py
+├── modal_sample_app.py
+├── modal_train_app_unguided.py
+├── modal_train_app.py
+├── modal_train_autoencoder.py
+├── model.py
+├── requirements.txt
+├── sample.py
+├── train.py
+├── trainer.py
+└── vector_tagging
+    ├── JudgeLLM
+    │   ├── judge_test_results.json
+    │   └── modal_label_judge.py
+    └── LLM
+        ├── tagging_loop.py
+        └── vector_tagger.py
+```
+
+---
+
 ## Installation
 
 ```bash
