@@ -1,6 +1,6 @@
 import torch
-from final_project.autoencoder import EHRLatentAutoencoder
-from final_project.model import DiffusionModel
+from autoencoder import EHRLatentAutoencoder
+from model import DiffusionModel
 import yaml
 import math
 import numpy as np
