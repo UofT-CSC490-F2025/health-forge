@@ -173,27 +173,34 @@ def run():
         for idx in top_entropy_idx:
             if idx not in binary_cols:
                 continue
-            y_real = full_real[:, idx]
-            X_real = np.delete(full_real, idx, axis=1)
-            y_synth = synth_sample[:, idx]
-            X_synth = np.delete(synth_sample, idx, axis=1)
+            # Training data (bootstrap)
+            y_real_train = real_sample[:, idx]
+            X_real_train = np.delete(real_sample, idx, axis=1)
+
+            y_synth_train = synth_sample[:, idx]
+            X_synth_train = np.delete(synth_sample, idx, axis=1)
+
+            # Evaluation data (fixed full_real)
+            y_eval = full_real[:, idx]
+            X_eval = np.delete(full_real, idx, axis=1)
+            y_eval_bin = (y_eval > 0.5).astype(int)
 
             # Skip constant columns
-            if np.all(y_synth == 0) or np.all(y_synth == 1):
+            if np.all(y_real_train == 0) or np.all(y_real_train == 1):
                 continue
-            if np.all(y_real == 0) or np.all(y_real == 1):
+            if np.all(y_synth_train == 0) or np.all(y_synth_train == 1):
+                continue
+            if np.all(y_eval_bin == 0) or np.all(y_eval_bin == 1):
                 continue
 
-            y_real_bin = (y_real > 0.5).astype(int)
-            y_synth_bin = (y_synth > 0.5).astype(int)
-
+            # Train on bootstrap, evaluate on full_real
             clf_real = LogisticRegression(max_iter=1000)
-            clf_real.fit(X_real, y_real_bin)
-            f1_real.append(f1_score(y_real_bin, clf_real.predict(X_real), average="micro"))
+            clf_real.fit(X_real_train, (y_real_train > 0.5).astype(int))
+            f1_real.append(f1_score(y_eval_bin, clf_real.predict(X_eval), average="micro"))
 
             clf_synth = LogisticRegression(max_iter=1000)
-            clf_synth.fit(X_synth, y_synth_bin)
-            f1_synth.append(f1_score(y_synth_bin, clf_synth.predict(X_synth), average="micro"))
+            clf_synth.fit(X_synth_train, (y_synth_train > 0.5).astype(int))
+            f1_synth.append(f1_score(y_eval_bin, clf_synth.predict(X_eval), average="micro"))
 
         f1_real_list.append(f1_real)
         f1_synth_list.append(f1_synth)
