@@ -3,7 +3,7 @@
 HealthForge is a synthetic electronic health record (EHR) generator trained on the MIMIC-IV dataset. This repository contains the full training and sampling pipeline for the model.
 
 A detailed report describing the architecture, problem statement, and use cases can be found here:  
-**[Insert link]**
+**https://drive.google.com/file/d/1BOO-jEnDC6tqnNZ0St-O6AglnjoBW4yh/view?usp=sharing**
 
 Training for this project was performed using Modal, with datasets and checkpoints stored in AWS S3.
 
