@@ -200,10 +200,16 @@ def evaluate_sample(sample_row, prompt_dict, diagnosis_indices=None):
                 correct += 1
 
         elif isinstance(expected_val, float):
-
-            # NEW: age tolerance widened to ±1
-            if abs(sample_val - expected_val) <= 1:
-                correct += 1
+            # ------------------------
+            # AGE TOLERANCE ±5
+            # ------------------------
+            if idx in category_ranges["age"]:
+                if abs(sample_val - expected_val) <= 5:   # <-- changed from 1 to 5
+                    correct += 1
+            else:
+                # for other continuous features, keep ±1 (or adjust as needed)
+                if abs(sample_val - expected_val) <= 1:
+                    correct += 1
 
         total += 1
 

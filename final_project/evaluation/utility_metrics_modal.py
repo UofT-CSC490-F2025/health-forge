@@ -46,13 +46,13 @@ def download_column_labels(s3, bucket, key):
     timeout=60*60*2
 )
 def run():
-    BUCKET = "healthforge-final-bucket"
+    BUCKET = "healthforge-final-bucket-1"
     TRAIN_FILE = "original_vectors_train.npy"
     TEST_FILE  = "original_vectors_val.npy"
-    SYNTH_FILE = "sample_output.npy"
+    SYNTH_FILE = "all_samples_unguided.npy"
     COL_LABEL_FILE = "patient_vector_columns.csv"
     N_REPEATS = 5
-    SUBSAMPLE_FRAC = 0.01
+    SUBSAMPLE_FRAC = 0.1
 
     # Setup S3
     s3 = boto3.client("s3")
@@ -63,6 +63,8 @@ def run():
     real_train = download_s3_file(s3, BUCKET, TRAIN_FILE, f"/tmp/{TRAIN_FILE}")
     real_test  = download_s3_file(s3, BUCKET, TEST_FILE,  f"/tmp/{TEST_FILE}")
     synthetic  = download_s3_file(s3, BUCKET, SYNTH_FILE, f"/tmp/{SYNTH_FILE}")
+    synthetic = synthetic.reshape(-1, synthetic.shape[-1])
+    log(f"Flattened synthetic shape: {synthetic.shape}")
     column_labels = download_column_labels(s3, BUCKET, COL_LABEL_FILE)
 
     # -----------------------------

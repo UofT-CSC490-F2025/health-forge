@@ -41,8 +41,8 @@ def download_column_labels(s3, bucket, key):
 # -----------------------------
 # ATTRIBUTE INFERENCE (CPU) with bootstrap & k-voting
 # -----------------------------
-def attribute_inference_f1(real_train, synthetic, known_idx, unknown_idx, k=5, n_bootstrap=5):
-    f1_list = []
+def attribute_inference_risk(real_train, synthetic, known_idx, unknown_idx, k=500, n_bootstrap=5):
+    risk_list = []
 
     for b in range(n_bootstrap):
         # Subsample synthetic rows for this bootstrap
@@ -55,23 +55,31 @@ def attribute_inference_f1(real_train, synthetic, known_idx, unknown_idx, k=5, n
 
         for i in range(real_train.shape[0]):
             neigh = indices[i]
-            vote = syn_sample[neigh][:, unknown_idx].mean(axis=0) > 0.5
-            preds.append(vote.astype(int))
+            # Predict each unknown binary feature using majority vote
+            vote_prob = syn_sample[neigh][:, unknown_idx].mean(axis=0)
+            preds.append(vote_prob)
 
         preds = np.array(preds)
         true_vals = real_train[:, unknown_idx]
-        f1 = f1_score(true_vals.flatten(), preds.flatten(), zero_division=0, average="micro")
-        f1_list.append(f1)
+        correct = (preds == true_vals).sum()
+        total = np.prod(true_vals.shape)
+        risk = correct / total
+        risk_list.append(risk)
 
-    mean_f1 = np.mean(f1_list)
-    sd_f1 = np.std(f1_list)
-    return mean_f1, sd_f1
+
+    mean_risk = np.mean(risk_list)
+    sd_risk   = np.std(risk_list)
+    return mean_risk, sd_risk
+
 
 # -----------------------------
 # MEMBERSHIP INFERENCE (GPU) with bootstrap & batching
 # -----------------------------
-def membership_inference_f1(real_train, real_test, synthetic, n_bootstrap=5, max_synth_rows=2000):
-    f1_list = []
+# -----------------------------
+# MEMBERSHIP INFERENCE (GPU) as risk
+# -----------------------------
+def membership_inference_risk(real_train, real_test, synthetic, n_bootstrap=5, max_synth_rows=10000):
+    risk_list = []
 
     def gpu_min_distances(real, synthetic_batch, batch_size=500):
         real_t = torch.tensor(real, dtype=torch.float32, device="cuda")
@@ -94,19 +102,24 @@ def membership_inference_f1(real_train, real_test, synthetic, n_bootstrap=5, max
         test_dists  = gpu_min_distances(real_test, syn_sample)
 
         combined = np.concatenate([train_dists, test_dists])
-        threshold = np.percentile(combined, 5)
+        threshold = np.percentile(combined, 5)  # 5th percentile as membership threshold
 
+        # Predict membership: 1 if distance < threshold, else 0
         train_pred = (train_dists < threshold).astype(int)
         test_pred  = (test_dists  < threshold).astype(int)
         preds = np.concatenate([train_pred, test_pred])
-        true  = np.concatenate([np.ones(len(train_pred)), np.zeros(len(test_pred))])
 
-        f1 = f1_score(true, preds)
-        f1_list.append(f1)
+        # True membership labels: 1 for train, 0 for test
+        true_labels = np.concatenate([np.ones(len(train_pred)), np.zeros(len(test_pred))])
 
-    mean_f1 = np.mean(f1_list)
-    sd_f1 = np.std(f1_list)
-    return mean_f1, sd_f1
+        # Membership risk = fraction of correct predictions
+        risk = (preds == true_labels).mean()
+        risk_list.append(risk)
+
+    mean_risk = np.mean(risk_list)
+    sd_risk   = np.std(risk_list)
+    return mean_risk, sd_risk
+
 
 # -----------------------------
 # MAIN MODAL FUNCTION
@@ -118,10 +131,10 @@ def membership_inference_f1(real_train, real_test, synthetic, n_bootstrap=5, max
     timeout=60 * 60 * 2,
 )
 def run():
-    BUCKET = "healthforge-final-bucket"
+    BUCKET = "healthforge-final-bucket-1"
     TRAIN_FILE = "original_vectors_train.npy"
     TEST_FILE  = "original_vectors_val.npy"
-    SYNTH_FILE = "sample_output.npy"
+    SYNTH_FILE = "all_samples_unguided.npy"
     COL_LABEL_FILE = "patient_vector_columns.csv"
     N_REPEATS = 5
 
@@ -134,6 +147,8 @@ def run():
     real_train = download_s3_file(s3, BUCKET, TRAIN_FILE, f"/tmp/{TRAIN_FILE}")
     real_test  = download_s3_file(s3, BUCKET, TEST_FILE,  f"/tmp/{TEST_FILE}")
     synthetic  = download_s3_file(s3, BUCKET, SYNTH_FILE, f"/tmp/{SYNTH_FILE}")
+    synthetic = synthetic.reshape(-1, synthetic.shape[-1])
+    log(f"Flattened synthetic shape: {synthetic.shape}")
     column_labels = download_column_labels(s3, BUCKET, COL_LABEL_FILE)
 
     # -----------------------------
@@ -160,8 +175,8 @@ def run():
     log(f"Synthetic shape: {synthetic.shape}")
 
     # Subsample 1/10 of the train and test sets
-    train_size = real_train.shape[0] // 100
-    test_size  = real_test.shape[0]  // 100
+    train_size = real_train.shape[0] // 10
+    test_size  = real_test.shape[0]  // 10
 
     train_indices = np.random.choice(real_train.shape[0], train_size, replace=False)
     test_indices  = np.random.choice(real_test.shape[0],  test_size,  replace=False)
@@ -174,18 +189,23 @@ def run():
 
 
     # -----------------------------
-    # Compute high-entropy known features
+    # Compute top-entropy known features (instead of top-frequency)
     # -----------------------------
+    # Compute probability per column
     p = real_train[:, binary_cols].mean(axis=0)
-    p = real_train.mean(axis=0)
-    p = np.clip(p, 0, 1)
-    entropy = -p * np.log2(p + 1e-12) - (1 - p) * np.log2(1 - p + 1e-12)
-    known_idx = np.argsort(-entropy)[:256]  # top 256 high-entropy features
-    binary_unknown_idx = [i for i in range(real_train.shape[1]) if i not in known_idx and i in binary_cols]
+    p = np.clip(p, 1e-12, 1-1e-12)  # avoid log(0)
+    # Compute binary entropy
+    entropy = -p * np.log2(p) - (1 - p) * np.log2(1 - p)
+    # Select top 30 highest-entropy features
+    top_entropy_indices_in_binary = np.argsort(-entropy)[:30]
+    known_idx = [binary_cols[i] for i in top_entropy_indices_in_binary]  # map back to original column indices
 
-    # Map top high-entropy indices to column labels
-    high_entropy_labels = [column_labels[i] for i in known_idx[:10]]
-    log(f"Top 10 high-entropy feature labels: {high_entropy_labels}")
+    # Remaining binary columns
+    binary_unknown_idx = [i for i in binary_cols if i not in known_idx]
+
+    # Map top known indices to labels
+    top_entropy_labels = [column_labels[i] for i in known_idx[:10]]
+    log(f"Top 10 high-entropy feature labels: {top_entropy_labels}")
 
     # -----------------------------
     # Bootstrapping for mean ± SD
@@ -195,18 +215,19 @@ def run():
 
     for i in range(N_REPEATS):
         log(f"Bootstrap repeat {i+1}/{N_REPEATS}")
-        attr_f1 = attribute_inference_f1(real_train, synthetic, known_idx, binary_unknown_idx)
-        memb_f1 = membership_inference_f1(real_train, real_test, synthetic)
-        attr_f1_list.append(attr_f1)
-        memb_f1_list.append(memb_f1)
+        attr_risk = attribute_inference_risk(real_train, synthetic, known_idx, binary_unknown_idx)
+        attr_f1_list.append(attr_risk)
+        memb_risk = membership_inference_risk(real_train, real_test, synthetic)
+        memb_f1_list.append(memb_risk)
+
 
     # Compute mean and SD
     attr_mean, attr_sd = np.mean(attr_f1_list), np.std(attr_f1_list)
     memb_mean, memb_sd = np.mean(memb_f1_list), np.std(memb_f1_list)
 
     log("---------- FINAL RESULTS (mean ± SD) ----------")
-    log(f"Attribute Inference F1:   {attr_mean:.4f} ± {attr_sd:.4f}")
-    log(f"Membership Inference F1: {memb_mean:.4f} ± {memb_sd:.4f}")
+    log(f"Attribute Inference Risk: {attr_mean:.4f} ± {attr_sd:.4f}")
+    log(f"Membership Inference Risk: {memb_mean:.4f} ± {memb_sd:.4f}")
 
     return {
         "attribute_inference_f1_mean": float(attr_mean),
