@@ -41,58 +41,45 @@ def download_column_labels(s3, bucket, key):
 # -----------------------------
 # ATTRIBUTE INFERENCE (CPU) with bootstrap & k-voting
 # -----------------------------
-def attribute_inference_risk(real_train, synthetic, known_idx, unknown_idx, k=500, n_bootstrap=5):
-    risk_list = []
+def attribute_inference_risk(real_train, synthetic, known_idx, unknown_idx, k=400, n_bootstrap=5):
+    f1_list = []
 
     for b in range(n_bootstrap):
-        # Subsample synthetic rows for this bootstrap
         syn_sample = synthetic[np.random.choice(synthetic.shape[0], real_train.shape[0], replace=True)]
         knn = NearestNeighbors(n_neighbors=k, metric='euclidean')
         knn.fit(syn_sample[:, known_idx])
 
         _, indices = knn.kneighbors(real_train[:, known_idx])
-        preds = []
 
+        preds = []
         for i in range(real_train.shape[0]):
             neigh = indices[i]
-            # Predict each unknown binary feature using majority vote
             vote_prob = syn_sample[neigh][:, unknown_idx].mean(axis=0)
-            preds.append(vote_prob)
+
+            pred_binary = (vote_prob >= 0.5).astype(int)
+            preds.append(pred_binary)
 
         preds = np.array(preds)
-        true_vals = real_train[:, unknown_idx]
-        correct = (preds == true_vals).sum()
-        total = np.prod(true_vals.shape)
-        risk = correct / total
-        risk_list.append(risk)
+        true_vals = real_train[:, unknown_idx].astype(int)
+
+        f1 = f1_score(true_vals.flatten(), preds.flatten(), average="micro")
+        f1_list.append(f1)
+
+    return np.mean(f1_list), np.std(f1_list)
 
 
-    mean_risk = np.mean(risk_list)
-    sd_risk   = np.std(risk_list)
-    return mean_risk, sd_risk
-
-
-# -----------------------------
-# MEMBERSHIP INFERENCE (GPU) with bootstrap & batching
-# -----------------------------
 # -----------------------------
 # MEMBERSHIP INFERENCE (GPU) as risk
 # -----------------------------
 def membership_inference_risk(real_train, real_test, synthetic, n_bootstrap=5, max_synth_rows=10000):
-    risk_list = []
+    f1_list = []
 
-    def gpu_min_distances(real, synthetic_batch, batch_size=500):
+    def gpu_min_distances(real, syn):
         real_t = torch.tensor(real, dtype=torch.float32, device="cuda")
-        syn_t  = torch.tensor(synthetic_batch, dtype=torch.float32, device="cuda")
-        mins = []
-
-        for i in range(0, real_t.size(0), batch_size):
-            batch_real = real_t[i:i+batch_size][:, None, :]
-            dists = torch.norm(batch_real - syn_t[None, :, :], dim=2)
-            batch_mins = dists.min(dim=1).values.cpu().numpy()
-            mins.append(batch_mins)
-
-        return np.concatenate(mins)
+        syn_t  = torch.tensor(syn, dtype=torch.float32, device="cuda")
+        dists = torch.cdist(real_t, syn_t, p=2)
+        mins = dists.min(dim=1).values.cpu().numpy()
+        return mins
 
     for b in range(n_bootstrap):
         n_rows = min(max_synth_rows, synthetic.shape[0])
@@ -102,23 +89,19 @@ def membership_inference_risk(real_train, real_test, synthetic, n_bootstrap=5, m
         test_dists  = gpu_min_distances(real_test, syn_sample)
 
         combined = np.concatenate([train_dists, test_dists])
-        threshold = np.percentile(combined, 5)  # 5th percentile as membership threshold
+        threshold = np.percentile(combined, 5)
 
-        # Predict membership: 1 if distance < threshold, else 0
         train_pred = (train_dists < threshold).astype(int)
         test_pred  = (test_dists  < threshold).astype(int)
         preds = np.concatenate([train_pred, test_pred])
 
-        # True membership labels: 1 for train, 0 for test
         true_labels = np.concatenate([np.ones(len(train_pred)), np.zeros(len(test_pred))])
 
-        # Membership risk = fraction of correct predictions
-        risk = (preds == true_labels).mean()
-        risk_list.append(risk)
+        f1 = f1_score(true_labels, preds, average="micro")
+        f1_list.append(f1)
 
-    mean_risk = np.mean(risk_list)
-    sd_risk   = np.std(risk_list)
-    return mean_risk, sd_risk
+    return np.mean(f1_list), np.std(f1_list)
+
 
 
 # -----------------------------
