@@ -6,3 +6,5 @@ numpy
 tqdm
 pyyaml
 modal
+pytest
+pytest-cov
