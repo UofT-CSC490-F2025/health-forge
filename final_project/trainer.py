@@ -3,8 +3,8 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 from tqdm import tqdm
-from data_utils import prepare_diffusion_dataloaders
-from model import DiffusionModel
+from final_project.data_utils import prepare_diffusion_dataloaders
+from final_project.model import DiffusionModel
 
 class DiffusionTrainer:
     

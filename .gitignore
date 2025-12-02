@@ -1,1 +1,5 @@
 *.pyc
+*.pt
+*.npy
+*.txt
+*.csv

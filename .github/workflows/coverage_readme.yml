@@ -1,0 +1,82 @@
+name: Update coverage in README
+
+on:
+  push:
+    branches:
+      - A6
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme-coverage:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: final_project
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage (for README)
+        run: |
+          pytest \
+            --junitxml=pytest.xml \
+            --cov=final_project \
+            --cov-report=term-missing:skip-covered \
+            test/ | tee pytest-coverage.txt
+
+      - name: Generate coverage HTML (no PR comment)
+        id: coverage
+        uses: MishaKav/pytest-coverage-comment@v1
+        with:
+          pytest-coverage-path: final_project/pytest-coverage.txt
+          junitxml-path: final_project/pytest.xml
+          hide-comment: true
+
+      - name: Inject coverage HTML into README
+        working-directory: .
+        run: |
+          python - << 'EOF'
+          from pathlib import Path
+
+          readme_path = Path("README.md")
+          text = readme_path.read_text()
+
+          start_marker = "<!-- Pytest Coverage Comment:Begin -->"
+          end_marker = "<!-- Pytest Coverage Comment:End -->"
+
+          if start_marker not in text or end_marker not in text:
+              raise SystemExit("Markers not found in README.md")
+
+          start_idx = text.index(start_marker) + len(start_marker)
+          end_idx = text.index(end_marker)
+
+          before = text[:start_idx]
+          after = text[end_idx:]
+
+          coverage_html = """${{ steps.coverage.outputs.coverageHtml }}"""
+
+          new_text = before + "\n" + coverage_html + "\n" + after
+          readme_path.write_text(new_text)
+          EOF
+
+      - name: Commit README changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update coverage in README"
+          file_pattern: README.md

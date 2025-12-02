@@ -55,3 +55,6 @@ Training Autoencoder Model:
 3. In health_forge/final_project
    > > modal run ./modal_train_app.py
 4. The best model checkpoint along with latent data mean and standard deviation will be uploaded to your S3.
+
+<!-- Pytest Coverage Comment:Begin -->
+<!-- Pytest Coverage Comment:End -->
