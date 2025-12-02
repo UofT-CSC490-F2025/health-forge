@@ -10,17 +10,14 @@ from sample import sample_from_checkpoint
 # CONFIG
 # ---------------------------
 BUCKET = "healthforge-final-bucket-1"
-MODEL_OUTPUT_KEY = "results/best_diffusion_model_WITH_ENCODER_BIG.pt"
+DIFFUSION_CKPT_KEY = "results/best_diffusion_model_WITH_ENCODER_BIG.pt"
+AUTOENCODER_CKPT_KEY = "autoencoder/best_autoencoder_model.pt"
+LATENT_STD_KEY = "results/latent_std_BIG.npy"
+LATENT_MEAN_KEY = "results/latent_mean_BIG.npy"
 SAMPLE_OUTPUT_KEY = "results/sample_output.npy"
-
-# Local filenames you said you have
-LOCAL_DIFFUSION = "rip"
-LOCAL_AUTOENCODER = "best_autoencoder_model.pt"   # local name
-# inside container we will expose it as best_autoencoder_model.pt to match sample.py
 CONTAINER_AUTOENCODER = "/root/best_autoencoder_model.pt"
-LOCAL_LATENT_MEAN = "latent_mean_BIG.npy"
-LOCAL_LATENT_STD = "latent_std_BIG.npy"
 LOCAL_CONFIG = "configs.yaml"
+
 
 # ---------------------------
 # Modal App
@@ -46,15 +43,6 @@ image = (
     .add_local_file("autoencoder.py", "/root/autoencoder.py")
     .add_local_file("sample.py", "/root/sample.py")
     .add_local_file("patient_text_prompts.txt", "/root/patient_text_prompts.txt")
-
-    # optional local model files, mapped into container paths sample.py expects
-    # diffusion ckpt
-    # .add_local_file(LOCAL_DIFFUSION, "/root/{}".format(LOCAL_DIFFUSION))
-    # autoencoder local file put at container filename sample.py expects
-    .add_local_file(LOCAL_AUTOENCODER, CONTAINER_AUTOENCODER)
-    # latent stats and config
-    .add_local_file(LOCAL_LATENT_MEAN, "/root/latent_mean.npy")
-    .add_local_file(LOCAL_LATENT_STD, "/root/latent_std.npy")
     .add_local_file(LOCAL_CONFIG, "/root/configs_og.yaml")
 )
 
@@ -90,32 +78,28 @@ def sample_model():
         raise FileNotFoundError("No config found")
 
     # Diffusion checkpoint resolution
-    local_diff_path = f"/root/{LOCAL_DIFFUSION}"
-    if os.path.exists(local_diff_path):
-        diffusion_ckpt_path = local_diff_path
-    else:
-        model_tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
-        s3.download_fileobj(BUCKET, MODEL_OUTPUT_KEY, model_tmp)
-        model_tmp.close()
-        diffusion_ckpt_path = model_tmp.name
+    model_tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
+    s3.download_fileobj(BUCKET, DIFFUSION_CKPT_KEY, model_tmp)
+    model_tmp.close()
+    diffusion_ckpt_path = model_tmp.name
 
     # Ensure autoencoder + latent stats exist
     # ---------------------------------------------------------
-    if not os.path.exists(CONTAINER_AUTOENCODER):
-        ae_tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
-        s3.download_fileobj(BUCKET, "ae/best_autoencoder_model.pt", ae_tmp)
-        ae_tmp.close()
-        os.replace(ae_tmp.name, CONTAINER_AUTOENCODER)
+    print("Loading autoencoder")
+    ae_tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
+    s3.download_fileobj(BUCKET, AUTOENCODER_CKPT_KEY, ae_tmp)
+    ae_tmp.close()
+    os.replace(ae_tmp.name, CONTAINER_AUTOENCODER)
 
-    if not (os.path.exists("/root/latent_mean.npy") and os.path.exists("/root/latent_std.npy")):
-        mean_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
-        std_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
-        s3.download_fileobj(BUCKET, "ae/latent_mean.npy", mean_tmp)
-        s3.download_fileobj(BUCKET, "ae/latent_std.npy", std_tmp)
-        mean_tmp.close()
-        std_tmp.close()
-        os.replace(mean_tmp.name, "/root/latent_mean.npy")
-        os.replace(std_tmp.name, "/root/latent_std.npy")
+    print("Loading autoencoder mean and std stats")
+    mean_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
+    std_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False)
+    s3.download_fileobj(BUCKET, LATENT_MEAN_KEY, mean_tmp)
+    s3.download_fileobj(BUCKET, LATENT_STD_KEY, std_tmp)
+    mean_tmp.close()
+    std_tmp.close()
+    os.replace(mean_tmp.name, "/root/latent_mean.npy")
+    os.replace(std_tmp.name, "/root/latent_std.npy")
 
     # ---------------------------------------------------------
     # Read text prompts
@@ -142,14 +126,14 @@ def sample_model():
     out_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False).name
     np.save(out_tmp, all_outputs)
 
-    s3.upload_file(out_tmp, BUCKET, "results/all_samples.npy")
+    s3.upload_file(out_tmp, BUCKET, SAMPLE_OUTPUT_KEY)
 
     os.unlink(out_tmp)
 
     return {
         "status": "complete",
         "num_prompts": len(prompts),
-        "output_s3_key": "results/all_samples.npy",
+        "output_s3_key": SAMPLE_OUTPUT_KEY,
         "shape": str(all_outputs.shape),
     }
 

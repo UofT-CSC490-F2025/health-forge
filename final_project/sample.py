@@ -33,7 +33,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
     # Load diffusion model
     model = DiffusionModel(cfg["model"])
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     model.to(device=device)
