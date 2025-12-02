@@ -73,7 +73,7 @@ def train_worker():
 
     samples[:, 1] = samples[:, 1] / oldest_age
     samples[:, 3] = samples[:, 3] / max_admissions
-    assert (samples.max() <= 1.0) and (samples.min() >= 0), "Samples are not in a normalized range"
+    assert (samples.max() <= 1.0) and (samples.min() >= 0.0), "Samples are not in a normalized range"
 
 
     print("Loaded dataset:")
@@ -200,9 +200,6 @@ def train_worker():
         print("ERROR: best model file not found")
 
   
-
-
-
 # ---------------------------
 # ENTRYPOINT
 # ---------------------------

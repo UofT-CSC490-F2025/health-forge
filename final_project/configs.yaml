@@ -15,7 +15,7 @@ data_utils:
   embed_drop_prob: 0.05
   schedule: "linear"
   num_workers: 8
-  batch_size: 512
+  batch_size: 1024
 
 trainer:
   lr: 0.0002 # (instead of 1e-5)
@@ -23,7 +23,7 @@ trainer:
   warmup_steps: 500 # NEW
   ema_decay: 0.999 # NEW
   ema_update_interval: 1 # NEW
-  num_epochs: 512
+  num_epochs: 13 #512
   save_path: best_diffusion_model.pt
 
 sampler:

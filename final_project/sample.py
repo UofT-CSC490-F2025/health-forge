@@ -105,10 +105,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     autoencoder.load_state_dict(state_dict)
     autoencoder.eval()
 
-
-
-
-     # Freeze AE weights
+    # Freeze AE weights
     for p in autoencoder.parameters():
         p.requires_grad = False
 
@@ -165,7 +162,7 @@ if __name__ == "__main__":
     with open(args.cfg_path) as f:
         cfg = yaml.safe_load(f)
 
-    out = sample_from_checkpoint(cfg, args.ckpt_path, "middle aged male with diabetes")
+    out = sample_from_checkpoint(cfg, args.ckpt_path, "early 30s")
     print(out)
 
    
