@@ -3,7 +3,7 @@ name: Run tests for final_project
 on:
   push:
     branches:
-      - A6
+      - model-conditional-modal-ryan
   pull_request:
     branches:
       - main # <-- base branch of your PRs

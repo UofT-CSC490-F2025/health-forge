@@ -3,7 +3,7 @@ name: Update coverage in README
 on:
   push:
     branches:
-      - A6
+      - model-conditional-modal-ryan
 
 permissions:
   contents: write
