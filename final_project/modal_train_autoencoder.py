@@ -49,6 +49,17 @@ aws_secret = modal.Secret.from_name("aws-secret")
     secrets=[aws_secret]
 )
 def train_worker():
+    """
+    Train an EHR autoencoder on normalized patient vectors and upload the best model to S3.
+
+    Downloads a NumPy dataset from S3, normalizes continuous features, builds train/validation
+    splits, and trains a latent autoencoder using BCE loss for binary features and MSE loss for
+    continuous features. Applies early stopping, saves the best checkpoint, and uploads the
+    final model back to S3.
+
+    Returns:
+        None. The trained model checkpoint is saved to S3.
+    """
     import torch
     from torch.utils.data import TensorDataset, DataLoader
     from autoencoder import EHRLatentAutoencoder

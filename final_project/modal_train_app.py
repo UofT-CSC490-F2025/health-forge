@@ -54,6 +54,17 @@ aws_secret = modal.Secret.from_name("aws-secret")
     secrets=[aws_secret]
 )
 def train_worker():
+    """
+    Load training data and configuration, run model training, and upload outputs to S3.
+
+    Downloads samples, text embeddings, and an autoencoder checkpoint from S3; loads
+    a training configuration; optionally resumes from a previous model checkpoint; and
+    invokes `train_from_pkl` to train a diffusion model. After training, the function
+    uploads the best model and latent statistics back to S3 and cleans up temporary files.
+
+    Returns:
+        None. All results are saved to S3.
+    """
     import torch
     import yaml
     from train import train_from_pkl

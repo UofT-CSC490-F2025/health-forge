@@ -8,6 +8,30 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
+    """
+    Generate synthetic EHR samples from a trained diffusion checkpoint.
+
+    Loads a diffusion model checkpoint, constructs (or embeds) a text condition,
+    performs reverse diffusion to produce latent vectors, and decodes them using a
+    pretrained autoencoder. Handles classifier-free guidance, variance interpolation,
+    latent de-normalization, and postprocessing of binary/continuous features.
+
+    Args:
+        cfg (dict): Full experiment configuration containing model, sampler,
+            and data-utils parameters.
+        checkpoint_path (str): Path to the saved diffusion model checkpoint.
+        text_desc (str, optional): Optional conditioning text. If None, a default
+            demographic description is used.
+
+    Returns:
+        np.ndarray: Generated EHR samples of shape (N, feature_dim), with binary
+        features thresholded and continuous features de-normalized.
+    """
+    INPUT_DIM = 1806
+    LATENT_DIM = 1024
+    MAX_ADMISSIONS = 238
+    MAX_AGE= 91
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     T = cfg["data_utils"]["T"]
@@ -86,9 +110,6 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
             else:
                 z_t = x_t
-          
-    INPUT_DIM = 1806
-    LATENT_DIM = 1024
 
     autoencoder = EHRLatentAutoencoder(input_dim=INPUT_DIM, latent_dim=LATENT_DIM).to("cuda")
     state_dict = torch.load("best_autoencoder_model.pt", map_location="cuda")
@@ -115,8 +136,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     
     print(z_t)
     
-    MAX_ADMISSIONS = 238
-    MAX_AGE= 91
+
 
     logits = autoencoder.decoder(z_t)
 
