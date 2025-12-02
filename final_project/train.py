@@ -104,9 +104,6 @@ def train_from_pkl(cfg, samples, text_embeds, autoencoder_path, save_path="best_
 
     text_embeds = torch.from_numpy(text_embeds)
     print(f"SAMPLES SHAPE {samples.shape} | LATENTS SHAPE {latents.shape} | TEXT EMBEDS SHAPE {text_embeds.shape}")
-    print(f"SAMPLE EXAMPLE: {samples[0]}")
-    print(f"LATENT EXAMPLE: {latents[0]}")
-    print(f"EMBED EXAMPLE: {text_embeds[0]}")
 
 
     assert latents.shape[0] == text_embeds.shape[0], "Mismatch between samples and text embeddings"

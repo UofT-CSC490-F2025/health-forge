@@ -13,13 +13,9 @@ DATA_KEY = "original_vectors_gemma.npy"
 EMBEDS_KEY = "vector_tag_embeddings_gemma.npy"
 
 MODEL_OUTPUT_KEY = "results/best_diffusion_model_WITH_ENCODER_TEST.pt"
-
 AUTOENCODER_KEY = "autoencoder/best_autoencoder_model.pt"
-
 LATENT_MEAN_KEY = "results/latent_mean_TEST.npy"
-
 LATENT_STD_KEY = "results/latent_std_TEST.npy"
-
 RESUME = False
 
 app = modal.App("diffusion-training-app")
