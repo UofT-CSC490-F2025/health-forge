@@ -44,11 +44,58 @@ def download_column_labels(s3, bucket, key):
 category_ranges = {
     "gender": [0],
     "age": [1],
-    "dod": [2],
+    "death": [2],
     "total_admissions": [3],
-    "marital": [4,5,6,7,8],
-    "race": list(range(9, 50)),  # adjust to your actual race columns
-    "diagnoses": list(range(50, 1806))  # adjust to actual diagnosis columns
+
+    # marital columns 4–8
+    "marital": list(range(4, 9)),
+    "marital_tokens_order": [
+        "divorced",
+        "married",
+        "n a",
+        "single",
+        "widowed",
+    ],
+
+    # race columns 9–43
+    "race": list(range(9, 44)),
+    "race_tokens_order": [
+        "american indian alaska native",
+        "asian",
+        "asian indian",
+        "chinese",
+        "korean",
+        "south east asian",
+        "black african",
+        "black african american",
+        "cape verdean",
+        "caribbean island",
+        "hispanic or latino",
+        "central american",
+        "columbian",
+        "cuban",
+        "dominican",
+        "guatemalan",
+        "honduran",
+        "mexican",
+        "puerto rican",
+        "salvadoran",
+        "multiple race ethnicity",
+        "hawaiian pacific islander",
+        "other",
+        "patient declined",
+        "portuguese",
+        "south american",
+        "unable to obtain",
+        "unknown",
+        "white",
+        "white brazilian",
+        "white eastern european",
+        "white other european",
+        "white russian"
+    ],
+
+    "diagnoses": list(range(44, 1806))
 }
 
 # -----------------------------
@@ -260,19 +307,6 @@ def evaluate_samples():
     s3.download_file(BUCKET, PROMPT_FILE, prompt_local)
     with open(prompt_local, "r") as f:
         prompts = [line.strip() for line in f.readlines()]
-
-    # -------------------------
-    # Hard-coded category ranges
-    # -------------------------
-    category_ranges = {
-        "gender": [0],                  # isMale
-        "age": [1],                     # age
-        "death": [2],                   # isDead
-        "total_admissions": [3],        # count
-        "marital": list(range(4, 9)),   # 4–8
-        "race": list(range(9, 44)),     # 9–43
-        "diagnoses": list(range(44, len(column_labels)))
-    }
 
     # Corrected wrapper
     def local_prompt_to_indices(prompt):
