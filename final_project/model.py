@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn.functional as F
 from torch.nn import (
@@ -12,6 +11,7 @@ from torch.nn import (
 )
 
 
+#Diffusion Model Class
 class DiffusionModel(Module):
     def __init__(self, cfg):
         """
@@ -127,7 +127,7 @@ class MLPBlock(Module):
         """
         # First MLP with text conditioning (FiLM-style add)
         h = self.norm1(x)
-        cond = self.text_proj(text_embed)  # [B, dim]
+        cond = self.text_proj(text_embed)  
         h = h + cond
         h = self.mlp1(h)
         x = x + h  # residual
@@ -141,7 +141,7 @@ class MLPBlock(Module):
 
 
 # ---------------------------
-# Transformer-style block
+# Transformer Block
 # ---------------------------
 class FeedForward(Module):
     def __init__(self, dim, mult=4, dropout=0.0):
@@ -209,22 +209,21 @@ class MultiHeadAttention(Module):
         We treat this as a sequence of length 1: [B, 1, dim]
         """
         B, D = x.shape
-        x_seq = x.unsqueeze(1)  # [B, 1, D]
+        x_seq = x.unsqueeze(1) 
 
-        qkv = self.qkv(x_seq)  # [B, 1, 3D]
-        q, k, v = qkv.chunk(3, dim=-1)  # each [B, 1, D]
+        qkv = self.qkv(x_seq)  
+        q, k, v = qkv.chunk(3, dim=-1) 
 
-        # Reshape for heads: [B, heads, 1, head_dim]
         q = q.view(B, 1, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(B, 1, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(B, 1, self.num_heads, self.head_dim).transpose(1, 2)
 
-        attn_scores = (q @ k.transpose(-2, -1)) * self.scale  # [B, heads, 1, 1]
+        attn_scores = (q @ k.transpose(-2, -1)) * self.scale  
         attn = F.softmax(attn_scores, dim=-1)
         attn = self.dropout(attn)
 
         out = (attn @ v).transpose(1, 2).reshape(B, 1, D)
-        out = self.proj(out).squeeze(1)  # [B, D]
+        out = self.proj(out).squeeze(1)  
 
         return out
 
@@ -255,24 +254,23 @@ class CrossAttention(Module):
         """
         B, D = x.shape
 
-        # Treat both as length-1 sequences
-        x_seq = x.unsqueeze(1)          # [B, 1, D]
-        context_seq = context.unsqueeze(1)  # [B, 1, Cdim]
+        x_seq = x.unsqueeze(1)         
+        context_seq = context.unsqueeze(1)  
 
-        q = self.to_q(x_seq)           # [B, 1, D]
-        k = self.to_k(context_seq)     # [B, 1, D]
-        v = self.to_v(context_seq)     # [B, 1, D]
+        q = self.to_q(x_seq)          
+        k = self.to_k(context_seq)     
+        v = self.to_v(context_seq)  
 
         # reshape for heads
         q = q.view(B, 1, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(B, 1, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(B, 1, self.num_heads, self.head_dim).transpose(1, 2)
 
-        attn_scores = (q @ k.transpose(-2, -1)) * self.scale  # [B, heads, 1, 1]
+        attn_scores = (q @ k.transpose(-2, -1)) * self.scale  
         attn = F.softmax(attn_scores, dim=-1)
         attn = self.dropout(attn)
 
         out = (attn @ v).transpose(1, 2).reshape(B, 1, D)
-        out = self.out_proj(out).squeeze(1)  # [B, D]
+        out = self.out_proj(out).squeeze(1) 
 
         return out

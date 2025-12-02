@@ -5,12 +5,12 @@ import random
 import numpy as np
 
 class DiffusionDataset(Dataset):
-    """Dataset for diffusion model training with on-the-fly noise generation"""
+    """Dataset for diffusion model training"""
     def __init__(self, data, text_embeds, T, noise_a, noise_b, embed_drop_prob, device):
         """
         data: [N, D] tensor - clean data
         text_embeds: [N, text_dim] tensor
-        T: number of diffusion steps (unused here, kept for consistency)
+        T: number of diffusion steps
         noise_a, noise_b: noise schedule parameters
         embed_drop_prob: probability to drop text embeddings
         device: 'cpu' or 'cuda'
@@ -49,14 +49,14 @@ class DiffusionDataset(Dataset):
         epsilon = torch.randn_like(x)
         z_l = signal_coeff * x + noise_coeff * epsilon
 
-        lambda_scaled = math.tanh(l / 40.0) # TODO: Replace with lambda_max - lambda_min
+        lambda_scaled = math.tanh(l / 40.0)
 
         return z_l, text_embed, lambda_scaled, epsilon
 
 
 def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     """
-    Prepare train and test dataloaders
+    Prepare train and test data loaders
     """
     test_split = cfg['test_split']
     T = cfg['T']

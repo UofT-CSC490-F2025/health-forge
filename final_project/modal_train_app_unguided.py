@@ -41,18 +41,10 @@ image = (
         "scikit-learn",
         "pandas"
     ])
-    # code files
     .add_local_file("model.py", "/root/model.py")
     .add_local_file("autoencoder.py", "/root/autoencoder.py")
     .add_local_file("sample.py", "/root/sample.py")
-    .add_local_file("patient_text_prompts.txt", "/root/patient_text_prompts.txt")
-
-    # optional local model files, mapped into container paths sample.py expects
-    # diffusion ckpt
-    # .add_local_file(LOCAL_DIFFUSION, "/root/{}".format(LOCAL_DIFFUSION))
-    # autoencoder local file put at container filename sample.py expects
     .add_local_file(LOCAL_AUTOENCODER, CONTAINER_AUTOENCODER)
-    # latent stats and config
     .add_local_file(LOCAL_LATENT_MEAN, "/root/latent_mean.npy")
     .add_local_file(LOCAL_LATENT_STD, "/root/latent_std.npy")
     .add_local_file(LOCAL_CONFIG, "/root/configs_og.yaml")
@@ -71,10 +63,7 @@ aws_secret = modal.Secret.from_name("aws-secret")
 )
 def sample_model():
     """
-    Reads text prompts from /root/patient_text_prompts.txt
-    Generates one sample per line
-    Combines all samples into one array
-    Uploads ONE final .npy file to S3.
+    Modal script to generate a bunch of unguided data points to gauge dataset adherence/similarity.
     """
     s3 = boto3.client("s3")
 
@@ -89,15 +78,11 @@ def sample_model():
     if cfg is None:
         raise FileNotFoundError("No config found")
 
-    # Diffusion checkpoint resolution
-    local_diff_path = f"/root/{LOCAL_DIFFUSION}"
-    if os.path.exists(local_diff_path):
-        diffusion_ckpt_path = local_diff_path
-    else:
-        model_tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
-        s3.download_fileobj(BUCKET, MODEL_OUTPUT_KEY, model_tmp)
-        model_tmp.close()
-        diffusion_ckpt_path = model_tmp.name
+    
+    model_tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
+    s3.download_fileobj(BUCKET, MODEL_OUTPUT_KEY, model_tmp)
+    model_tmp.close()
+    diffusion_ckpt_path = model_tmp.name
 
     # Ensure autoencoder + latent stats exist
     # ---------------------------------------------------------
@@ -118,22 +103,16 @@ def sample_model():
         os.replace(std_tmp.name, "/root/latent_std.npy")
 
     # ---------------------------------------------------------
-    # Read text prompts
-    # ---------------------------------------------------------
-    with open("/root/patient_text_prompts.txt", "r") as f:
-        prompts = [line.strip() for line in f.readlines() if line.strip()]
-
-    # ---------------------------------------------------------
     # Generate samples
     # ---------------------------------------------------------
     all_outputs = []
 
-    for idx, text_prompt in enumerate(prompts):
-        print(f"Generating for prompt {idx}: {text_prompt}")
-        sample = sample_from_checkpoint(cfg, diffusion_ckpt_path, text_prompt)
+    for i in range(0, 10):
+        print(f"Generating unguided batch {i}")
+        sample = sample_from_checkpoint(cfg, diffusion_ckpt_path, "")
 
         # sample is probably shape [4096] or [seq_len, dim]
-        all_outputs.append(sample)
+        all_outputs.extend(sample)
 
     # Convert to array
     all_outputs = np.array(all_outputs)
@@ -142,14 +121,13 @@ def sample_model():
     out_tmp = tempfile.NamedTemporaryFile(suffix=".npy", delete=False).name
     np.save(out_tmp, all_outputs)
 
-    s3.upload_file(out_tmp, BUCKET, "results/all_samples.npy")
+    s3.upload_file(out_tmp, BUCKET, "results/all_samples_unguided.npy")
 
     os.unlink(out_tmp)
 
     return {
         "status": "complete",
-        "num_prompts": len(prompts),
-        "output_s3_key": "results/all_samples.npy",
+        "output_s3_key": "results/all_samples_unguided.npy",
         "shape": str(all_outputs.shape),
     }
 

@@ -27,5 +27,5 @@ trainer:
   save_path: best_diffusion_model.pt
 
 sampler:
-  guidance_scale: 3.0 # (0.3 → 0.6 for stronger conditioning)
+  guidance_scale: 1.0 #3.0
   var_interpolation_coeff: 0.1
