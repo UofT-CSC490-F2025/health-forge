@@ -1,0 +1,102 @@
+{
+  "0": {
+    "scores": {
+      "clinical_correctness": 5,
+      "completeness_of_key_patient_information": 3,
+      "precision_of_patient_information": 5,
+      "conciseness": 5,
+      "formatting": 5
+    },
+    "explanation": "The label correctly identifies the patient's age, gender, diabetes, and hypertension. However, it lacks information about marital status and race which are also important key patient information present in the EHR. The precision is high as it accurately reflects the conditions without adding any inaccuracies. The label is concise and well-formatted."
+  },
+  "1": {
+    "scores": {
+      "clinical_correctness": 5,
+      "completeness_of_key_patient_information": 3,
+      "precision_of_patient_information": 5,
+      "conciseness": 5,
+      "formatting": 5
+    },
+    "explanation": "The label accurately reflects the patient's age, gender, and medical conditions (bacterial infection, hypertension, and asthma). However, it lacks information about her race and marital status."
+  },
+  "2": {
+    "scores": {
+      "clinical_correctness": 4,
+      "completeness_of_key_patient_information": 3,
+      "precision_of_patient_information": 4,
+      "conciseness": 5,
+      "formatting": 5
+    },
+    "explanation": "The label correctly identifies the patient's age, gender, viral infection, hypertension, and heart failure. However, it does not mention that the patient is deceased or married, which are important pieces of information. The precision in mentioning specific conditions is good, but completeness could be improved by including all relevant information. The label is concise and well-formatted."
+  },
+  "3": {
+    "scores": {
+      "clinical_correctness": 4,
+      "completeness_of_key_patient_information": 3,
+      "precision_of_patient_information": 4,
+      "conciseness": 5,
+      "formatting": 5
+    },
+    "explanation": "The label correctly identifies the patient's age, gender, presence of diabetes and asthma. However, it does not specify which ethnicities are mentioned in the EHR (Asian Chinese and Hispanic Latino Mexican) but instead uses a more general term 'Asian and Hispanic'. The label is concise and well-formatted."
+  },
+  "4": {
+    "scores": {
+      "clinical_correctness": 5,
+      "completeness_of_key_patient_information": 4,
+      "precision_of_patient_information": 5,
+      "conciseness": 5,
+      "formatting": 5
+    },
+    "explanation": "The label accurately reflects the patient's age, gender, race, and medical condition as provided in the EHR vector. However, it does not include information about the number of admissions or marital status which are also present in the EHR vector."
+  },
+  "5": {
+    "scores": {
+      "clinical_correctness": 1,
+      "completeness_of_key_patient_information": 1,
+      "precision_of_patient_information": 1,
+      "conciseness": 4,
+      "formatting": 5
+    },
+    "explanation": "The label is incorrect as the patient is a 70-year-old male with multiple medical conditions including diabetes, hypertension, and heart failure. The label does not reflect any of these critical details."
+  },
+  "6": {
+    "scores": {
+      "clinical_correctness": 1,
+      "completeness_of_key_patient_information": 1,
+      "precision_of_patient_information": 1,
+      "conciseness": 3,
+      "formatting": 3
+    },
+    "explanation": "The label is incorrect in terms of gender, age, race, and presence of cancer. The patient is a 52-year-old female, not a young Hispanic male. There is no mention of cancer in the provided EHR vector."
+  },
+  "7": {
+    "scores": {
+      "clinical_correctness": 1,
+      "completeness_of_key_patient_information": 1,
+      "precision_of_patient_information": 1,
+      "conciseness": 3,
+      "formatting": 3
+    },
+    "explanation": "The label incorrectly states the patient as healthy, female, and omits critical conditions such as viral infection, hypertension, heart failure, and marital status. The label is concise but lacks precision and completeness."
+  },
+  "8": {
+    "scores": {
+      "clinical_correctness": 2,
+      "completeness_of_key_patient_information": 2,
+      "precision_of_patient_information": 1,
+      "conciseness": 4,
+      "formatting": 5
+    },
+    "explanation": "The label incorrectly states the patient's gender as male when it is female, and omits asthma which is a significant condition. The label is concise but lacks precision and completeness."
+  },
+  "9": {
+    "scores": {
+      "clinical_correctness": 2,
+      "completeness_of_key_patient_information": 2,
+      "precision_of_patient_information": 1,
+      "conciseness": 4,
+      "formatting": 5
+    },
+    "explanation": "The label incorrectly states the patient as female when the EHR indicates the patient is male. It also claims the patient is cancer-free, which contradicts the presence of breast cancer in the EHR. The label does not mention other key information such as hypertension or marital status. However, it is concise and well-formatted."
+  }
+}

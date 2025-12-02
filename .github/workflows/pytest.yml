@@ -1,0 +1,52 @@
+name: Run tests for final_project
+
+on:
+  push:
+    branches:
+      - model-conditional-modal-ryan
+  pull_request:
+    branches:
+      - main # <-- base branch of your PRs
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: final_project
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest \
+            --junitxml=pytest.xml \
+            --cov=final_project \
+            --cov-report=term-missing:skip-covered \
+            test/ | tee pytest-coverage.txt
+
+      - name: Pytest coverage comment (PRs only)
+        if: github.event_name == 'pull_request'
+        uses: MishaKav/pytest-coverage-comment@v1
+        with:
+          pytest-coverage-path: final_project/pytest-coverage.txt
+          junitxml-path: final_project/pytest.xml
