@@ -6,7 +6,7 @@ import numpy as np
 
 class DiffusionDataset(Dataset):
     """Dataset for diffusion model training"""
-    def __init__(self, data, text_embeds, T, noise_a, noise_b, embed_drop_prob, device):
+    def __init__(self, data, text_embeds, T, noise_a, noise_b, embed_drop_prob, lambda_min, lambda_max, device):
         """
         data: [N, D] tensor - clean data
         text_embeds: [N, text_dim] tensor
@@ -27,6 +27,8 @@ class DiffusionDataset(Dataset):
         self.noise_b = noise_b
         self.embed_drop_prob = embed_drop_prob
         self.device = device
+        self.lambda_min = lambda_min
+        self.lambda_max = lambda_max
 
     def __len__(self):
         return len(self.data)
@@ -49,7 +51,7 @@ class DiffusionDataset(Dataset):
         epsilon = torch.randn_like(x)
         z_l = signal_coeff * x + noise_coeff * epsilon
 
-        lambda_scaled = math.tanh(l / 40.0)
+        lambda_scaled = math.tanh(l / 40.0) #TODO: REPLACE WITH LAMBDA_MAX - LAMBDA_MIN
 
         return z_l, text_embed, lambda_scaled, epsilon
 
@@ -81,8 +83,8 @@ def prepare_diffusion_dataloaders(data, text_embeds, cfg, device):
     noise_a = math.atan(math.exp(-lambda_min / 2)) - noise_b
 
     # Datasets
-    train_dataset = DiffusionDataset(train_data, train_embeds, T, noise_a, noise_b, embed_drop_prob, device)
-    test_dataset = DiffusionDataset(test_data, test_embeds, T, noise_a, noise_b, embed_drop_prob, device)
+    train_dataset = DiffusionDataset(train_data, train_embeds, T, noise_a, noise_b, embed_drop_prob, lambda_min, lambda_max, device)
+    test_dataset = DiffusionDataset(test_data, test_embeds, T, noise_a, noise_b, embed_drop_prob, lambda_min, lambda_max, device)
 
     print(f"Train samples: {len(train_dataset)} | Val samples: {len(test_dataset)}")
     # DataLoaders
