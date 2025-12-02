@@ -7,16 +7,26 @@ from data_utils import prepare_diffusion_dataloaders
 from model import DiffusionModel
 
 class DiffusionTrainer:
-    """Trainer class for diffusion models"""
+    
+    
     def __init__(self, model, train_loader, test_loader, 
                  cfg, device=None):
+        """Initialize the diffusion trainer.
+
+        Parameters
+        ----------
+        model : nn.Module
+            The diffusion model to train.
+        train_loader : DataLoader
+            Dataloader providing training batches.
+        test_loader : DataLoader
+            Dataloader providing validation batches.
+        cfg : dict
+            Trainer configuration (lr, num_epochs, save_path, etc.).
+        device : str or None
+            "cuda", "cpu", or None to auto-detect.
         """
-        model: diffusion model
-        train_loader: training dataloader
-        test_loader: validation dataloader
-        cfg: configuration dict
-        device: 'cpu' or 'cuda'; if None, auto-detect GPU
-        """
+
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
         lr = cfg["lr"]
         self.num_epochs = cfg["num_epochs"]
@@ -39,7 +49,13 @@ class DiffusionTrainer:
         self.val_losses = []
 
     def train_epoch(self):
-        """Train for one epoch"""
+        """Run one training epoch.
+
+        Returns
+        -------
+        float
+            Average training loss for the epoch.
+        """
         self.model.train()
         total_loss = 0
 
@@ -81,7 +97,13 @@ class DiffusionTrainer:
         return avg_loss
 
     def validate(self):
-        """Validate the model"""
+        """Evaluate the model on the validation set.
+
+        Returns
+        -------
+        float
+            Average validation loss (0 if no validation loader).
+        """
         self.model.eval()
         total_loss = 0
         if len(self.test_loader) == 0:
@@ -108,7 +130,14 @@ class DiffusionTrainer:
         return avg_loss
 
     def train(self):
-        """Train the model for multiple epochs"""
+        """Train the model for multiple epochs, tracking losses and saving checkpoints.
+        Returns
+        -------
+        list[float]
+            Training losses per epoch.
+        list[float]
+            Validation losses per epoch.
+        """
         best_val_loss = float('inf')
         for epoch in range(self.num_epochs):
             print(f'\nEpoch {epoch + 1}/{self.num_epochs}')
@@ -145,7 +174,21 @@ class DiffusionTrainer:
         return self.train_losses, self.val_losses
 
     def load_checkpoint(self, checkpoint_path):
+
+        """Load model and optimizer state from a saved checkpoint.
+
+        Parameters
+        ----------
+        checkpoint_path : str
+            Path to the checkpoint file.
+
+        Returns
+        -------
+        dict
+            The loaded checkpoint dictionary.
+        """
         """Load model from checkpoint"""
+        
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

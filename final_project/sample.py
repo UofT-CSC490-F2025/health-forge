@@ -1,5 +1,3 @@
-import tempfile
-import boto3
 import torch
 from autoencoder import EHRLatentAutoencoder
 from model import DiffusionModel
@@ -23,6 +21,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
         print("Using Default")
         text_desc = "This is a young male who is married and asian"
 
+    #Embedding model
     embed_model = SentenceTransformer("sentence-transformers/embeddinggemma-300m-medical")
     text_embed = embed_model.encode([text_desc])
     text_embed = text_embed / np.linalg.norm(text_embed, axis=1, keepdims=True)
@@ -32,9 +31,9 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
     text_embed = text_embed.repeat(100, 1)  
 
+    # Load diffusion model
     model = DiffusionModel(cfg["model"])
     checkpoint = torch.load(checkpoint_path, map_location=device)
-
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     model.to(device=device)
@@ -46,12 +45,9 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     noise_b = math.atan(math.exp(-lambda_max / 2))
     noise_a = math.atan(math.exp(-lambda_min / 2)) - noise_b
 
-    lambda_schedule = torch.linspace(lambda_min, lambda_max, T)
     with torch.no_grad():
-        # for t in tqdm(range(T)):
         for t in tqdm(reversed(range(T))):
 
-            # l = lambda_schedule[t]  # lambda
             l = -2 * math.log(math.tan(noise_a * (t / T) + noise_b))
 
             l_scaled = math.tanh(l / (lambda_max - lambda_min))
@@ -68,10 +64,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
             epsilon_pred = ((1 + guidance_scale) * cond_epsilon) - (guidance_scale * uncond_epsilon)
             x_t = (z_t - (noise_coeff * epsilon_pred)) / signal_coeff
             
-            # if t < T - 1 :
             if t > 0:
-                # TODO: Algorithm 2: Line 5
-                # l_next = lambda_schedule[t+1]
                 l_next = -2 * math.log(math.tan(noise_a * ((t-1) / T) + noise_b))
 
                 signal_coeff_next =  math.sqrt(1 / (1 + math.exp(-l_next)))         # alpha
@@ -93,9 +86,7 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
 
             else:
                 z_t = x_t
-
-
-    print("z_t stats BEFORE denorm:", z_t.mean().item(), z_t.std().item())            
+          
     INPUT_DIM = 1806
     LATENT_DIM = 1024
 
@@ -144,7 +135,6 @@ def sample_from_checkpoint(cfg, checkpoint_path, text_desc: str = None):
     formatted[:, cont_idx] = logits[:, cont_idx].clamp(0, 1)
 
     # 3. Denormalize continuous values
-   
     formatted[:, 1] *= MAX_AGE
     formatted[:, 3] *= MAX_ADMISSIONS
     print("GENERATED SAMPLE: ", formatted)

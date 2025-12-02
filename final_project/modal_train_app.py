@@ -96,6 +96,7 @@ def train_worker():
     print("Loaded dataset:")
     print("samples:", samples.shape)
     print("text_embeds:", text_embeds.shape)
+    print(text_embeds[0])
 
 
     resume_ckpt = None
