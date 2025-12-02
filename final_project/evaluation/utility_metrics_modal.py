@@ -233,52 +233,6 @@ def run():
         f1_corr = 0.0
     else:
         f1_corr = np.corrcoef(f1_real_mean, f1_synth_mean)[0,1]
-
-    # -----------------------------
-    # PLOTS WITH corr=... ANNOTATIONS
-    # -----------------------------
-    plt.figure(figsize=(6,6))
-    plt.scatter(mean_real_full, mean_synth_full, alpha=0.3)
-    plt.plot([0,1],[0,1], linestyle="--")
-    plt.xlabel("Real prevalence")
-    plt.ylabel("Synthetic prevalence")
-    plt.title("Feature prevalence (real vs synthetic)")
-
-    plt.text(
-        0.05, 0.90,
-        f"corr = {full_prevalence_corr:.3f}",
-        transform=plt.gca().transAxes,
-        fontsize=12,
-        bbox=dict(facecolor="white", alpha=0.7)
-    )
-
-    plt.tight_layout()
-    plt.savefig("/tmp/dim_wise_prevalence.png")
-
-    plt.figure(figsize=(6,6))
-    plt.scatter(f1_real_mean, f1_synth_mean, alpha=0.7)
-    plt.plot([0,1],[0,1], linestyle="--")
-    plt.xlabel("F1 (real)")
-    plt.ylabel("F1 (synthetic)")
-    plt.title("Dimension-wise prediction F1")
-
-    plt.text(
-        0.05, 0.90,
-        f"corr = {f1_corr:.3f}",
-        transform=plt.gca().transAxes,
-        fontsize=12,
-        bbox=dict(facecolor="white", alpha=0.7)
-    )
-
-    plt.tight_layout()
-    plt.savefig("/tmp/dim_wise_prediction.png")
-
-    # Upload
-    s3.upload_file("/tmp/dim_wise_prevalence.png", BUCKET, "dim_wise_prevalence.png")
-    log(f"Uploaded /tmp/dim_wise_prevalence.png")
-    s3.upload_file("/tmp/dim_wise_prediction.png", BUCKET, "dim_wise_prediction.png")
-    log(f"Uploaded /tmp/dim_wise_prediction.png")
-
     # -----------------------------
     # Final logs
     # -----------------------------
